@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QA Assured AI Tool</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #17202a;
+        --muted: #667085;
+        --border: #d8dee8;
+        --accent: #0f766e;
+        --accent-hover: #115e59;
+        --danger: #b42318;
+        --danger-bg: #fff1f0;
+        --shadow: 0 16px 40px rgba(16, 24, 40, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+
+      main {
+        width: min(1040px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 40px 0;
+      }
+
+      header {
+        margin-bottom: 24px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(2rem, 4vw, 3.1rem);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      header p {
+        margin: 0;
+        max-width: 760px;
+        color: var(--muted);
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+      }
+
+      .auth-panel,
+      form,
+      .result-panel {
+        padding: 22px;
+      }
+
+      .auth-panel {
+        display: grid;
+        gap: 14px;
+        margin-bottom: 20px;
+      }
+
+      .auth-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .auth-row input {
+        min-height: 42px;
+        min-width: 220px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0 12px;
+        font: inherit;
+      }
+
+      .auth-status {
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .field {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+
+      label {
+        font-weight: 700;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 120px;
+        resize: vertical;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px 14px;
+        color: var(--text);
+        font: inherit;
+        background: #ffffff;
+      }
+
+      textarea:focus,
+      input:focus {
+        border-color: var(--accent);
+        outline: 3px solid rgba(15, 118, 110, 0.16);
+      }
+
+      .actions,
+      .download-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .actions {
+        margin-top: 4px;
+      }
+
+      button {
+        min-height: 44px;
+        border: 0;
+        border-radius: 8px;
+        padding: 0 16px;
+        color: #ffffff;
+        background: var(--accent);
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        background: var(--accent-hover);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.62;
+      }
+
+      .secondary-button,
+      .download-actions button {
+        background: #344054;
+      }
+
+      .secondary-button:hover:not(:disabled),
+      .download-actions button:hover:not(:disabled) {
+        background: #1d2939;
+      }
+
+      .download-actions {
+        display: none;
+        margin-bottom: 12px;
+      }
+
+      .download-actions.visible {
+        display: flex;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .history-panel {
+        display: none;
+        margin: -4px 0 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+
+      .history-panel.visible {
+        display: block;
+      }
+
+      .history-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .history-header h3 {
+        margin: 0;
+        font-size: 0.98rem;
+      }
+
+      .history-clear {
+        min-height: 32px;
+        padding: 0 10px;
+        background: #667085;
+        font-size: 0.84rem;
+      }
+
+      .history-list {
+        display: grid;
+      }
+
+      .history-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 10px;
+        border: 0;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0;
+        padding: 10px 14px;
+        color: var(--text);
+        background: #ffffff;
+        text-align: left;
+        font-weight: 600;
+      }
+
+      .history-item:last-child {
+        border-bottom: 0;
+      }
+
+      .history-item:hover {
+        background: #f6f7f9;
+      }
+
+      .history-date {
+        color: var(--muted);
+        font-size: 0.84rem;
+        font-weight: 500;
+      }
+
+      .history-type {
+        border-radius: 999px;
+        padding: 3px 8px;
+        color: #344054;
+        background: #eef2f6;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .result-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: 1.1rem;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+
+      .error {
+        display: none;
+        margin-bottom: 12px;
+        border: 1px solid #fecdca;
+        border-radius: 8px;
+        padding: 12px 14px;
+        color: var(--danger);
+        background: var(--danger-bg);
+        font-weight: 700;
+      }
+
+      .error.visible {
+        display: block;
+      }
+
+      .result-content {
+        min-height: 180px;
+        max-height: 560px;
+        margin: 0;
+        overflow: auto;
+        word-break: break-word;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        background: #fbfcfe;
+        color: #243041;
+        font-size: 0.98rem;
+      }
+
+      .result-content > :first-child {
+        margin-top: 0;
+      }
+
+      .result-content > :last-child {
+        margin-bottom: 0;
+      }
+
+      .result-content h1,
+      .result-content h2,
+      .result-content h3 {
+        margin: 18px 0 8px;
+        line-height: 1.25;
+      }
+
+      .result-content h1 {
+        font-size: 1.45rem;
+      }
+
+      .result-content h2 {
+        font-size: 1.25rem;
+      }
+
+      .result-content h3 {
+        font-size: 1.08rem;
+      }
+
+      .result-content p {
+        margin: 0 0 10px;
+      }
+
+      .result-content ul,
+      .result-content ol {
+        margin: 8px 0 12px;
+        padding-left: 24px;
+      }
+
+      .result-content li {
+        margin-bottom: 6px;
+      }
+
+      @media (max-width: 640px) {
+        main {
+          width: min(100% - 24px, 1040px);
+          padding: 24px 0;
+        }
+
+        .auth-panel,
+        form,
+        .result-panel {
+          padding: 16px;
+        }
+
+        .actions,
+        .download-actions,
+        .auth-row {
+          display: grid;
+        }
+
+        button,
+        .auth-row input {
+          width: 100%;
+        }
+
+        .history-item {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>QA Assured AI Tool</h1>
+        <p>Generate story analysis, clarification questions, test cases, QA checklists, and risk analysis from a task description.</p>
+      </header>
+
+      <section class="panel auth-panel">
+        <div class="auth-row">
+          <span id="authStatus" class="auth-status">Working as guest. Login to sync data across devices.</span>
+        </div>
+        <div id="authForm" class="auth-row">
+          <input id="authEmail" type="email" autocomplete="email" placeholder="Email" />
+          <input id="authPassword" type="password" autocomplete="current-password" placeholder="Password, min 8 chars" />
+          <button type="button" id="loginButton">Login</button>
+          <button type="button" id="showRegisterButton" class="secondary-button">Create Account</button>
+        </div>
+        <div id="registerForm" class="auth-row hidden">
+          <input id="registerEmail" type="email" autocomplete="email" placeholder="Email" />
+          <input id="registerPassword" type="password" autocomplete="new-password" placeholder="Password, min 8 chars" />
+          <input id="registerConfirmPassword" type="password" autocomplete="new-password" placeholder="Confirm password" />
+          <button type="button" id="registerButton">Register</button>
+          <button type="button" id="cancelRegisterButton" class="secondary-button">Cancel</button>
+        </div>
+        <div id="signedInActions" class="auth-row hidden">
+          <button type="button" id="logoutButton" class="secondary-button">Logout</button>
+        </div>
+        <div id="authError" class="error"></div>
+      </section>
+
+      <div class="workspace">
+        <section class="panel">
+          <form id="qaForm">
+            <div class="field">
+              <label for="taskDescription">Task Description</label>
+              <textarea id="taskDescription" name="taskDescription" required placeholder="Paste the feature request, bug ticket, or product task here."></textarea>
+            </div>
+
+            <div class="field">
+              <label for="additionalContext">Additional Context</label>
+              <textarea id="additionalContext" name="additionalContext" placeholder="Add acceptance criteria, constraints, designs, API notes, or known assumptions."></textarea>
+            </div>
+
+            <div class="field">
+              <label for="clarificationAnswers">Clarification Answers</label>
+              <textarea id="clarificationAnswers" name="clarificationAnswers" placeholder="Add answers from product, design, engineering, or stakeholders."></textarea>
+            </div>
+
+            <div class="actions">
+              <button type="button" data-endpoint="/api/qa/analyze-story" data-result-key="analysis">Analyze Story</button>
+              <button type="button" data-endpoint="/api/qa/generate-questions" data-result-key="questions">Generate Questions</button>
+              <button type="button" data-endpoint="/api/qa/generate-checklist" data-result-key="checklist">Generate Checklist</button>
+              <button type="button" data-endpoint="/api/qa/generate-test-cases" data-result-key="testCases">Generate Test Cases</button>
+              <button type="button" data-endpoint="/api/qa/analyze-risks" data-result-key="risks">Analyze Risks</button>
+              <button type="button" id="historyButton" class="secondary-button">History</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel result-panel" aria-live="polite">
+          <div class="result-heading">
+            <h2>Result</h2>
+            <span id="status" class="status">Ready</span>
+          </div>
+          <div id="downloadActions" class="download-actions">
+            <button type="button" id="downloadButton">Download</button>
+            <button type="button" id="downloadCsvButton">Download TestRail CSV</button>
+          </div>
+          <div id="historyPanel" class="history-panel">
+            <div class="history-header">
+              <h3>Latest Generations</h3>
+              <button type="button" id="clearHistoryButton" class="history-clear">Clear</button>
+            </div>
+            <div id="historyList" class="history-list"></div>
+          </div>
+          <div id="error" class="error"></div>
+          <div id="result" class="result-content">Results will appear here.</div>
+        </section>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
+    <script>
+      const form = document.querySelector('#qaForm');
+      const generatorButtons = [...document.querySelectorAll('button[data-endpoint]')];
+      const statusEl = document.querySelector('#status');
+      const errorEl = document.querySelector('#error');
+      const authErrorEl = document.querySelector('#authError');
+      const resultEl = document.querySelector('#result');
+      const downloadActions = document.querySelector('#downloadActions');
+      const downloadButton = document.querySelector('#downloadButton');
+      const downloadCsvButton = document.querySelector('#downloadCsvButton');
+      const historyButton = document.querySelector('#historyButton');
+      const historyPanel = document.querySelector('#historyPanel');
+      const historyList = document.querySelector('#historyList');
+      const clearHistoryButton = document.querySelector('#clearHistoryButton');
+      const authStatus = document.querySelector('#authStatus');
+      const authForm = document.querySelector('#authForm');
+      const registerForm = document.querySelector('#registerForm');
+      const signedInActions = document.querySelector('#signedInActions');
+      const authEmail = document.querySelector('#authEmail');
+      const authPassword = document.querySelector('#authPassword');
+      const registerEmail = document.querySelector('#registerEmail');
+      const registerPassword = document.querySelector('#registerPassword');
+      const registerConfirmPassword = document.querySelector('#registerConfirmPassword');
+      const loginButton = document.querySelector('#loginButton');
+      const showRegisterButton = document.querySelector('#showRegisterButton');
+      const registerButton = document.querySelector('#registerButton');
+      const cancelRegisterButton = document.querySelector('#cancelRegisterButton');
+      const logoutButton = document.querySelector('#logoutButton');
+
+      const LOCAL_HISTORY_KEY = 'qaToolArtifactHistory';
+      const LOCAL_DRAFT_KEY = 'qaToolFormDraft';
+      const LOCAL_CURRENT_KEY = 'qaToolCurrentArtifact';
+      const LOCAL_LEGACY_TEST_CASE_HISTORY_KEY = 'qaToolTestCaseHistory';
+      const artifactLabels = {
+        analysis: 'Analyze Story',
+        questions: 'Generate Questions',
+        checklist: 'Generate Checklist',
+        testCases: 'Generate Test Cases',
+        risks: 'Analyze Risks',
+      };
+      const HISTORY_LIMIT = 30;
+
+      let currentUser = null;
+      let serverHistory = [];
+      let currentArtifact = {
+        key: '',
+        label: '',
+        text: '',
+      };
+      let draftTimer;
+
+      function apiFetch(url, options = {}) {
+        const headers = {
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(options.headers || {}),
+        };
+
+        return fetch(url, {
+          credentials: 'include',
+          ...options,
+          headers,
+        });
+      }
+
+      async function readJsonResponse(response) {
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          const details = data.details ? ` ${data.details}` : '';
+          throw new Error(`${data.message || `Request failed with status ${response.status}.`}${details}`);
+        }
+
+        return data;
+      }
+
+      function getPayload() {
+        return {
+          taskDescription: form.taskDescription.value.trim(),
+          additionalContext: form.additionalContext.value.trim(),
+          clarificationAnswers: form.clarificationAnswers.value.trim(),
+        };
+      }
+
+      function setPayload(payload = {}) {
+        form.taskDescription.value = payload.taskDescription || '';
+        form.additionalContext.value = payload.additionalContext || '';
+        form.clarificationAnswers.value = payload.clarificationAnswers || '';
+      }
+
+      function setLoading(isLoading, label = 'Working') {
+        generatorButtons.forEach((button) => {
+          button.disabled = isLoading;
+        });
+        statusEl.textContent = isLoading ? `${label}...` : 'Ready';
+      }
+
+      function showError(message) {
+        errorEl.textContent = message;
+        errorEl.classList.add('visible');
+      }
+
+      function clearError() {
+        errorEl.textContent = '';
+        errorEl.classList.remove('visible');
+      }
+
+      function showAuthError(message) {
+        authErrorEl.textContent = message;
+        authErrorEl.classList.add('visible');
+      }
+
+      function clearAuthError() {
+        authErrorEl.textContent = '';
+        authErrorEl.classList.remove('visible');
+      }
+
+      function renderResult(markdownText) {
+        if (!window.marked || !window.DOMPurify) {
+          resultEl.textContent = markdownText;
+          return;
+        }
+
+        marked.setOptions({
+          breaks: true,
+          gfm: true,
+        });
+
+        resultEl.innerHTML = DOMPurify.sanitize(marked.parse(markdownText || ''), {
+          USE_PROFILES: { html: true },
+        });
+      }
+
+      function setDownloadState(artifact = {}) {
+        currentArtifact = {
+          key: artifact.key || '',
+          label: artifact.label || '',
+          text: artifact.text || '',
+        };
+
+        const canDownloadDocx = ['checklist', 'testCases'].includes(currentArtifact.key) && currentArtifact.text;
+        const canDownloadCsv = currentArtifact.key === 'testCases' && currentArtifact.text;
+
+        downloadActions.classList.toggle('visible', Boolean(canDownloadDocx));
+        downloadButton.disabled = !canDownloadDocx;
+        downloadCsvButton.disabled = !canDownloadCsv;
+        downloadCsvButton.classList.toggle('hidden', !canDownloadCsv);
+      }
+
+      function persistCurrentArtifact() {
+        if (!currentArtifact.text) {
+          localStorage.removeItem(LOCAL_CURRENT_KEY);
+          return;
+        }
+
+        localStorage.setItem(LOCAL_CURRENT_KEY, JSON.stringify(currentArtifact));
+      }
+
+      function restoreLocalDraft() {
+        try {
+          setPayload(JSON.parse(localStorage.getItem(LOCAL_DRAFT_KEY) || '{}'));
+        } catch {
+          localStorage.removeItem(LOCAL_DRAFT_KEY);
+        }
+      }
+
+      function restoreLocalCurrentArtifact() {
+        try {
+          const artifact = JSON.parse(localStorage.getItem(LOCAL_CURRENT_KEY) || '{}');
+
+          if (artifact.text) {
+            renderResult(artifact.text);
+            setDownloadState(artifact);
+            statusEl.textContent = 'Restored';
+          }
+        } catch {
+          localStorage.removeItem(LOCAL_CURRENT_KEY);
+        }
+      }
+
+      function saveLocalDraft() {
+        localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(getPayload()));
+      }
+
+      function saveDraft() {
+        clearTimeout(draftTimer);
+
+        draftTimer = setTimeout(async () => {
+          const payload = getPayload();
+
+          if (!currentUser) {
+            saveLocalDraft();
+            return;
+          }
+
+          try {
+            await apiFetch('/api/artifacts/draft/current', {
+              method: 'PUT',
+              body: JSON.stringify(payload),
+            });
+          } catch {
+            saveLocalDraft();
+          }
+        }, 350);
+      }
+
+      function updateAuthUi() {
+        if (currentUser) {
+          authStatus.textContent = `Signed in as ${currentUser.email}. Drafts and history sync through this server.`;
+          authForm.classList.add('hidden');
+          registerForm.classList.add('hidden');
+          signedInActions.classList.remove('hidden');
+        } else {
+          authStatus.textContent = 'Working as guest. Login to sync data across devices.';
+          authForm.classList.remove('hidden');
+          signedInActions.classList.add('hidden');
+        }
+      }
+
+      function getLocalHistory() {
+        try {
+          return JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY) || '[]');
+        } catch {
+          return [];
+        }
+      }
+
+      function migrateLegacyHistory() {
+        if (localStorage.getItem(LOCAL_HISTORY_KEY)) {
+          return;
+        }
+
+        try {
+          const legacy = JSON.parse(localStorage.getItem(LOCAL_LEGACY_TEST_CASE_HISTORY_KEY) || '[]');
+
+          if (!legacy.length) {
+            return;
+          }
+
+          localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(legacy.slice(0, HISTORY_LIMIT).map((item) => ({
+            id: item.id || String(Date.now()),
+            key: 'testCases',
+            label: 'Generate Test Cases',
+            title: item.title || 'Generated Test Cases',
+            createdAt: item.createdAt || new Date().toISOString(),
+            text: item.text || '',
+          }))));
+          localStorage.removeItem(LOCAL_LEGACY_TEST_CASE_HISTORY_KEY);
+        } catch {
+          localStorage.removeItem(LOCAL_LEGACY_TEST_CASE_HISTORY_KEY);
+        }
+      }
+
+      function getActiveHistory() {
+        return currentUser ? serverHistory : getLocalHistory();
+      }
+
+      async function loadServerHistory() {
+        if (!currentUser) {
+          serverHistory = [];
+          return;
+        }
+
+        const data = await readJsonResponse(await apiFetch('/api/artifacts'));
+        serverHistory = data.artifacts || [];
+      }
+
+      async function loadServerDraft() {
+        if (!currentUser) {
+          return;
+        }
+
+        const data = await readJsonResponse(await apiFetch('/api/artifacts/draft/current'));
+
+        if (data.draft) {
+          setPayload(data.draft);
+        } else if (form.taskDescription.value || form.additionalContext.value || form.clarificationAnswers.value) {
+          await apiFetch('/api/artifacts/draft/current', {
+            method: 'PUT',
+            body: JSON.stringify(getPayload()),
+          });
+        }
+      }
+
+      function makeHistoryTitle(payload, label) {
+        return payload.taskDescription.split(/\s+/).slice(0, 10).join(' ') || label;
+      }
+
+      async function saveArtifactHistory(key, label, text, payload) {
+        const title = makeHistoryTitle(payload, label);
+
+        if (currentUser) {
+          const data = await readJsonResponse(await apiFetch('/api/artifacts', {
+            method: 'POST',
+            body: JSON.stringify({
+              key,
+              label,
+              title,
+              text,
+              ...payload,
+            }),
+          }));
+          serverHistory = [data.artifact, ...serverHistory].slice(0, HISTORY_LIMIT);
+        } else {
+          const nextItem = {
+            id: String(Date.now()),
+            key,
+            label,
+            title,
+            createdAt: new Date().toISOString(),
+            text,
+          };
+          localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify([nextItem, ...getLocalHistory()].slice(0, HISTORY_LIMIT)));
+        }
+
+        renderHistoryList();
+      }
+
+      function renderHistoryList() {
+        const history = getActiveHistory();
+
+        if (!history.length) {
+          historyList.innerHTML = '<div class="history-item">No history yet.</div>';
+          return;
+        }
+
+        historyList.innerHTML = '';
+        history.forEach((item) => {
+          const button = document.createElement('button');
+          const title = document.createElement('span');
+          const type = document.createElement('span');
+          const date = document.createElement('span');
+
+          button.type = 'button';
+          button.className = 'history-item';
+          title.textContent = item.title;
+          type.className = 'history-type';
+          type.textContent = item.label || artifactLabels[item.key] || 'Artifact';
+          date.className = 'history-date';
+          date.textContent = new Date(item.createdAt).toLocaleString();
+          button.append(title, type, date);
+          button.addEventListener('click', () => {
+            clearError();
+            renderResult(item.text);
+            setDownloadState({
+              key: item.key,
+              label: item.label || artifactLabels[item.key] || 'QA Artifact',
+              text: item.text,
+            });
+            persistCurrentArtifact();
+            historyPanel.classList.remove('visible');
+            statusEl.textContent = 'Loaded from history';
+          });
+          historyList.appendChild(button);
+        });
+      }
+
+      async function clearHistory() {
+        if (currentUser) {
+          const ids = serverHistory.map((item) => item.id);
+          await Promise.all(ids.map((id) => apiFetch(`/api/artifacts/${id}`, { method: 'DELETE' }).catch(() => null)));
+          serverHistory = [];
+        } else {
+          localStorage.removeItem(LOCAL_HISTORY_KEY);
+          localStorage.removeItem(LOCAL_LEGACY_TEST_CASE_HISTORY_KEY);
+        }
+
+        renderHistoryList();
+        historyPanel.classList.remove('visible');
+      }
+
+      function slugify(value) {
+        return value
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 60) || 'qa-artifact';
+      }
+
+      function downloadBlob(filename, blob) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function downloadFile(filename, content, mimeType) {
+        downloadBlob(filename, new Blob([content], { type: mimeType }));
+      }
+
+      function stripMarkdown(value) {
+        return String(value || '')
+          .replace(/\*\*(.*?)\*\*/g, '$1')
+          .replace(/__(.*?)__/g, '$1')
+          .replace(/`([^`]+)`/g, '$1')
+          .replace(/\[(.*?)\]\((.*?)\)/g, '$1')
+          .trim();
+      }
+
+      function markdownToDocxParagraphs(markdownText) {
+        const {
+          HeadingLevel,
+          Paragraph,
+          TextRun,
+        } = window.docx;
+        const paragraphs = [];
+
+        String(markdownText || '').split(/\r?\n/).forEach((line) => {
+          const trimmed = line.trim();
+
+          if (!trimmed) {
+            paragraphs.push(new Paragraph({ text: '' }));
+            return;
+          }
+
+          if (trimmed.startsWith('### ')) {
+            paragraphs.push(new Paragraph({
+              heading: HeadingLevel.HEADING_3,
+              children: [new TextRun(stripMarkdown(trimmed.replace(/^###\s+/, '')))],
+            }));
+            return;
+          }
+
+          if (trimmed.startsWith('## ')) {
+            paragraphs.push(new Paragraph({
+              heading: HeadingLevel.HEADING_2,
+              children: [new TextRun(stripMarkdown(trimmed.replace(/^##\s+/, '')))],
+            }));
+            return;
+          }
+
+          if (trimmed.startsWith('# ')) {
+            paragraphs.push(new Paragraph({
+              heading: HeadingLevel.HEADING_1,
+              children: [new TextRun(stripMarkdown(trimmed.replace(/^#\s+/, '')))],
+            }));
+            return;
+          }
+
+          if (/^[-*]\s+/.test(trimmed)) {
+            paragraphs.push(new Paragraph({
+              bullet: { level: 0 },
+              children: [new TextRun(stripMarkdown(trimmed.replace(/^[-*]\s+/, '')))],
+            }));
+            return;
+          }
+
+          paragraphs.push(new Paragraph({
+            children: [new TextRun(stripMarkdown(trimmed))],
+          }));
+        });
+
+        return paragraphs;
+      }
+
+      async function buildDocxBlob(markdownText) {
+        if (!window.docx) {
+          throw new Error('DOCX generator failed to load. Check your internet connection and refresh the page.');
+        }
+
+        const {
+          Document,
+          Packer,
+        } = window.docx;
+        const document = new Document({
+          creator: 'QA Assured AI Tool',
+          title: currentArtifact.label || 'QA Artifact',
+          sections: [
+            {
+              children: markdownToDocxParagraphs(markdownText),
+            },
+          ],
+        });
+
+        return Packer.toBlob(document);
+      }
+
+      function csvEscape(value) {
+        const text = String(value || '').replace(/\r?\n/g, '\n');
+        return `"${text.replace(/"/g, '""')}"`;
+      }
+
+      function readField(block, label) {
+        const pattern = new RegExp(`^-\\s*${label}:\\s*([\\s\\S]*?)(?=\\n-\\s*(?:Priority|Preconditions|Test Data|Steps|Expected Result|Type):|\\n##\\s+TC-|$)`, 'im');
+        const match = block.match(pattern);
+        return match ? match[1].trim() : '';
+      }
+
+      function readSteps(block) {
+        const match = block.match(/-\s*Steps:\s*([\s\S]*?)(?=\n-\s*(?:Expected Result|Type):|\n##\s+TC-|$)/i);
+        return match ? match[1].trim() : '';
+      }
+
+      function parseTestCases(text) {
+        const normalized = text.trim();
+        const blocks = normalized
+          .split(/(?=^##\s+TC-\d+)/gim)
+          .map((block) => block.trim())
+          .filter(Boolean);
+        const parsed = blocks.map((block, index) => {
+          const heading = block.match(/^##\s*(TC-\d+)\s*:?\s*(.*)$/im);
+
+          return {
+            id: heading?.[1] || `TC-${String(index + 1).padStart(3, '0')}`,
+            title: heading?.[2]?.trim() || readField(block, 'Title') || `Generated Test Case ${index + 1}`,
+            priority: readField(block, 'Priority'),
+            preconditions: readField(block, 'Preconditions'),
+            testData: readField(block, 'Test Data'),
+            steps: readSteps(block),
+            expectedResult: readField(block, 'Expected Result'),
+            type: readField(block, 'Type'),
+          };
+        });
+
+        return parsed.length ? parsed : [{
+          id: 'TC-001',
+          title: 'Generated Test Cases',
+          priority: '',
+          preconditions: '',
+          testData: '',
+          steps: normalized,
+          expectedResult: '',
+          type: '',
+        }];
+      }
+
+      function buildTestCasesCsv(text) {
+        const headers = ['Title', 'Preconditions', 'Steps', 'Expected Result', 'Priority', 'Type', 'Test Case ID', 'Test Data'];
+        const rows = parseTestCases(text).map((testCase) => [
+          testCase.title,
+          testCase.preconditions,
+          testCase.steps,
+          testCase.expectedResult,
+          testCase.priority,
+          testCase.type,
+          testCase.id,
+          testCase.testData,
+        ]);
+
+        return `\uFEFF${[headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n')}`;
+      }
+
+      async function requestArtifact(button) {
+        const payload = getPayload();
+
+        clearError();
+        setDownloadState();
+
+        if (!payload.taskDescription) {
+          showError('Task Description is required.');
+          renderResult('Add a task description, then choose an action.');
+          return;
+        }
+
+        setLoading(true, button.textContent);
+        renderResult('Generating...');
+
+        try {
+          const data = await readJsonResponse(await apiFetch(button.dataset.endpoint, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          }));
+          const resultText = data[button.dataset.resultKey] || 'No result returned.';
+
+          renderResult(resultText);
+          setDownloadState({
+            key: button.dataset.resultKey,
+            label: button.textContent,
+            text: resultText,
+          });
+          persistCurrentArtifact();
+          await saveArtifactHistory(button.dataset.resultKey, button.textContent, resultText, payload);
+        } catch (err) {
+          showError(err.message || 'Something went wrong.');
+          renderResult('Unable to generate a result.');
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      function showRegisterForm() {
+        clearAuthError();
+        registerEmail.value = authEmail.value;
+        registerPassword.value = '';
+        registerConfirmPassword.value = '';
+        authForm.classList.add('hidden');
+        registerForm.classList.remove('hidden');
+        authStatus.textContent = 'Create an account to sync drafts and history across devices.';
+      }
+
+      function showLoginForm() {
+        clearAuthError();
+        authForm.classList.remove('hidden');
+        registerForm.classList.add('hidden');
+        authStatus.textContent = 'Working as guest. Login to sync data across devices.';
+      }
+
+      async function login() {
+        clearAuthError();
+
+        try {
+          const data = await readJsonResponse(await apiFetch('/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({
+              email: authEmail.value,
+              password: authPassword.value,
+            }),
+          }));
+
+          currentUser = data.user;
+          updateAuthUi();
+          await loadServerDraft();
+          await loadServerHistory();
+          renderHistoryList();
+          saveDraft();
+          statusEl.textContent = 'Logged in';
+        } catch (err) {
+          showAuthError(err.message || 'Login failed.');
+        }
+      }
+
+      async function register() {
+        clearAuthError();
+
+        if (registerPassword.value !== registerConfirmPassword.value) {
+          showAuthError('Passwords do not match.');
+          return;
+        }
+
+        try {
+          const data = await readJsonResponse(await apiFetch('/api/auth/register', {
+            method: 'POST',
+            body: JSON.stringify({
+              email: registerEmail.value,
+              password: registerPassword.value,
+            }),
+          }));
+
+          currentUser = data.user;
+          authEmail.value = registerEmail.value;
+          authPassword.value = '';
+          updateAuthUi();
+          await loadServerDraft();
+          await loadServerHistory();
+          renderHistoryList();
+          saveDraft();
+          statusEl.textContent = 'Account created';
+        } catch (err) {
+          showAuthError(err.message || 'Registration failed.');
+        }
+      }
+
+      async function logout() {
+        clearAuthError();
+
+        try {
+          await apiFetch('/api/auth/logout', {
+            method: 'POST',
+          });
+        } catch {
+          // Continue local logout even if the server session is already gone.
+        }
+
+        currentUser = null;
+        serverHistory = [];
+        updateAuthUi();
+        restoreLocalDraft();
+        renderHistoryList();
+        statusEl.textContent = 'Logged out';
+      }
+
+      async function initializeAuth() {
+        try {
+          const data = await readJsonResponse(await apiFetch('/api/auth/me'));
+          currentUser = data.user;
+          updateAuthUi();
+
+          if (currentUser) {
+            await loadServerDraft();
+            await loadServerHistory();
+          }
+        } catch {
+          currentUser = null;
+          updateAuthUi();
+        }
+      }
+
+      generatorButtons.forEach((button) => {
+        button.addEventListener('click', () => requestArtifact(button));
+      });
+
+      [form.taskDescription, form.additionalContext, form.clarificationAnswers].forEach((field) => {
+        field.addEventListener('input', saveDraft);
+      });
+
+      loginButton.addEventListener('click', login);
+      showRegisterButton.addEventListener('click', showRegisterForm);
+      registerButton.addEventListener('click', register);
+      cancelRegisterButton.addEventListener('click', showLoginForm);
+      logoutButton.addEventListener('click', logout);
+
+      historyButton.addEventListener('click', () => {
+        renderHistoryList();
+        historyPanel.classList.toggle('visible');
+      });
+
+      clearHistoryButton.addEventListener('click', () => {
+        clearHistory().catch((err) => showError(err.message || 'Unable to clear history.'));
+      });
+
+      downloadButton.addEventListener('click', async () => {
+        try {
+          downloadBlob(`${slugify(currentArtifact.label)}.docx`, await buildDocxBlob(currentArtifact.text));
+        } catch (err) {
+          showError(err.message || 'Unable to create DOCX file.');
+        }
+      });
+
+      downloadCsvButton.addEventListener('click', () => {
+        downloadFile(`${slugify(currentArtifact.label)}-testrail.csv`, buildTestCasesCsv(currentArtifact.text), 'text/csv;charset=utf-8');
+      });
+
+      migrateLegacyHistory();
+      restoreLocalDraft();
+      restoreLocalCurrentArtifact();
+      initializeAuth()
+        .then(() => {
+          renderHistoryList();
+          setDownloadState(currentArtifact);
+        })
+        .catch(() => {
+          renderHistoryList();
+          setDownloadState(currentArtifact);
+        });
+    </script>
+  </body>
+</html>
