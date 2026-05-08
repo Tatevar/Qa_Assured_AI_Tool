@@ -1,6 +1,6 @@
-import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import artifactRoutes from './routes/artifactRoutes.js';
@@ -10,6 +10,8 @@ import { attachUser } from './middleware/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
 const publicPath = path.join(__dirname, '..', 'public');
 
 const app = express();
