@@ -61,6 +61,38 @@
         gap: 20px;
       }
 
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .tab-button {
+        min-height: 40px;
+        border: 1px solid transparent;
+        border-bottom: 0;
+        border-radius: 8px 8px 0 0;
+        padding: 0 14px;
+        color: var(--muted);
+        background: transparent;
+      }
+
+      .tab-button:hover:not(:disabled) {
+        color: var(--text);
+        background: #eef2f6;
+      }
+
+      .tab-button.active {
+        border-color: var(--border);
+        color: var(--text);
+        background: var(--panel);
+      }
+
+      .tab-panel[hidden] {
+        display: none;
+      }
+
       .panel {
         background: var(--panel);
         border: 1px solid var(--border);
@@ -365,6 +397,16 @@
           display: grid;
         }
 
+        .tabs {
+          display: grid;
+          border-bottom: 0;
+        }
+
+        .tab-button {
+          border: 1px solid var(--border);
+          border-radius: 8px;
+        }
+
         button,
         .auth-row input {
           width: 100%;
@@ -380,7 +422,7 @@
     <main>
       <header>
         <h1>QA Assured AI Tool</h1>
-        <p>Generate story analysis, clarification questions, test cases, QA checklists, and risk analysis from a task description.</p>
+        <p>Generate requirements analysis, test documentation, and developer-ready bug reports from QA notes.</p>
       </header>
 
       <section class="panel auth-panel">
@@ -407,7 +449,12 @@
       </section>
 
       <div class="workspace">
-        <section class="panel">
+        <div class="tabs" role="tablist" aria-label="QA workspace">
+          <button type="button" id="requirementsTab" class="tab-button active" role="tab" aria-selected="true" aria-controls="requirementsPanel" data-tab="requirements">Requirements analysis / Test documentation</button>
+          <button type="button" id="bugTab" class="tab-button" role="tab" aria-selected="false" aria-controls="bugPanel" data-tab="bug">Bug creation</button>
+        </div>
+
+        <section id="requirementsPanel" class="panel tab-panel" role="tabpanel" aria-labelledby="requirementsTab">
           <form id="qaForm">
             <div class="field">
               <label for="taskDescription">Task Description</label>
@@ -431,6 +478,26 @@
               <button type="button" data-endpoint="/api/qa/generate-test-cases" data-result-key="testCases">Generate Test Cases</button>
               <button type="button" data-endpoint="/api/qa/analyze-risks" data-result-key="risks">Analyze Risks</button>
               <button type="button" id="historyButton" class="secondary-button">History</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="bugPanel" class="panel tab-panel" role="tabpanel" aria-labelledby="bugTab" hidden>
+          <form id="bugForm">
+            <div class="field">
+              <label for="issueDescription">Issue Description</label>
+              <textarea id="issueDescription" name="issueDescription" required placeholder="Describe the issue, environment, steps, actual result, expected result, payment method, device, browser, account type, or any evidence you have."></textarea>
+            </div>
+
+            <div class="field">
+              <label for="bugClarificationAnswers">Clarification Answers</label>
+              <textarea id="bugClarificationAnswers" name="bugClarificationAnswers" placeholder="Paste answers to generated questions or extra investigation notes before creating the bug report."></textarea>
+            </div>
+
+            <div class="actions">
+              <button type="button" data-endpoint="/api/qa/generate-bug-questions" data-result-key="bugQuestions" data-payload-source="bug">Clarify Questions</button>
+              <button type="button" data-endpoint="/api/qa/generate-bug-report" data-result-key="bugReport" data-payload-source="bug">Generate Bug Report</button>
+              <button type="button" id="bugHistoryButton" class="secondary-button">History</button>
             </div>
           </form>
         </section>
@@ -461,7 +528,10 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
     <script>
-      const form = document.querySelector('#qaForm');
+      const qaForm = document.querySelector('#qaForm');
+      const bugForm = document.querySelector('#bugForm');
+      const tabButtons = [...document.querySelectorAll('.tab-button')];
+      const tabPanels = [...document.querySelectorAll('.tab-panel')];
       const generatorButtons = [...document.querySelectorAll('button[data-endpoint]')];
       const statusEl = document.querySelector('#status');
       const errorEl = document.querySelector('#error');
@@ -471,6 +541,7 @@
       const downloadButton = document.querySelector('#downloadButton');
       const downloadCsvButton = document.querySelector('#downloadCsvButton');
       const historyButton = document.querySelector('#historyButton');
+      const bugHistoryButton = document.querySelector('#bugHistoryButton');
       const historyPanel = document.querySelector('#historyPanel');
       const historyList = document.querySelector('#historyList');
       const clearHistoryButton = document.querySelector('#clearHistoryButton');
@@ -499,6 +570,8 @@
         checklist: 'Generate Checklist',
         testCases: 'Generate Test Cases',
         risks: 'Analyze Risks',
+        bugQuestions: 'Clarify Questions',
+        bugReport: 'Generate Bug Report',
       };
       const HISTORY_LIMIT = 30;
 
@@ -509,6 +582,7 @@
         label: '',
         text: '',
       };
+      let activeTab = 'requirements';
       let draftTimer;
 
       function apiFetch(url, options = {}) {
@@ -535,18 +609,68 @@
         return data;
       }
 
-      function getPayload() {
+      function getDraftPayload() {
         return {
-          taskDescription: form.taskDescription.value.trim(),
-          additionalContext: form.additionalContext.value.trim(),
-          clarificationAnswers: form.clarificationAnswers.value.trim(),
+          taskDescription: qaForm.taskDescription.value.trim(),
+          additionalContext: qaForm.additionalContext.value.trim(),
+          clarificationAnswers: qaForm.clarificationAnswers.value.trim(),
+          issueDescription: bugForm.issueDescription.value.trim(),
+          bugClarificationAnswers: bugForm.bugClarificationAnswers.value.trim(),
+          activeTab,
         };
       }
 
       function setPayload(payload = {}) {
-        form.taskDescription.value = payload.taskDescription || '';
-        form.additionalContext.value = payload.additionalContext || '';
-        form.clarificationAnswers.value = payload.clarificationAnswers || '';
+        qaForm.taskDescription.value = payload.taskDescription || '';
+        qaForm.additionalContext.value = payload.additionalContext || '';
+        qaForm.clarificationAnswers.value = payload.clarificationAnswers || '';
+        bugForm.issueDescription.value = payload.issueDescription || '';
+        bugForm.bugClarificationAnswers.value = payload.bugClarificationAnswers || '';
+
+        if (payload.activeTab === 'bug') {
+          setActiveTab('bug', false);
+        }
+      }
+
+      function getQaPayload() {
+        return {
+          taskDescription: qaForm.taskDescription.value.trim(),
+          additionalContext: qaForm.additionalContext.value.trim(),
+          clarificationAnswers: qaForm.clarificationAnswers.value.trim(),
+        };
+      }
+
+      function getBugPayload() {
+        return {
+          issueDescription: bugForm.issueDescription.value.trim(),
+          clarificationAnswers: bugForm.bugClarificationAnswers.value.trim(),
+          bugClarificationAnswers: bugForm.bugClarificationAnswers.value.trim(),
+        };
+      }
+
+      function getButtonPayload(button) {
+        return button.dataset.payloadSource === 'bug' ? getBugPayload() : getQaPayload();
+      }
+
+      function setActiveTab(tabName, shouldSave = true) {
+        activeTab = tabName === 'bug' ? 'bug' : 'requirements';
+
+        tabButtons.forEach((button) => {
+          const isActive = button.dataset.tab === activeTab;
+          button.classList.toggle('active', isActive);
+          button.setAttribute('aria-selected', String(isActive));
+        });
+
+        tabPanels.forEach((panel) => {
+          const isActive = panel.id === `${activeTab}Panel`;
+          panel.hidden = !isActive;
+        });
+
+        historyPanel.classList.remove('visible');
+
+        if (shouldSave) {
+          saveDraft();
+        }
       }
 
       function setLoading(isLoading, label = 'Working') {
@@ -599,7 +723,7 @@
           text: artifact.text || '',
         };
 
-        const canDownloadDocx = ['checklist', 'testCases'].includes(currentArtifact.key) && currentArtifact.text;
+        const canDownloadDocx = ['checklist', 'testCases', 'bugReport'].includes(currentArtifact.key) && currentArtifact.text;
         const canDownloadCsv = currentArtifact.key === 'testCases' && currentArtifact.text;
 
         downloadActions.classList.toggle('visible', Boolean(canDownloadDocx));
@@ -640,14 +764,14 @@
       }
 
       function saveLocalDraft() {
-        localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(getPayload()));
+        localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(getDraftPayload()));
       }
 
       function saveDraft() {
         clearTimeout(draftTimer);
 
         draftTimer = setTimeout(async () => {
-          const payload = getPayload();
+          const payload = getDraftPayload();
 
           if (!currentUser) {
             saveLocalDraft();
@@ -735,16 +859,23 @@
 
         if (data.draft) {
           setPayload(data.draft);
-        } else if (form.taskDescription.value || form.additionalContext.value || form.clarificationAnswers.value) {
+        } else if (
+          qaForm.taskDescription.value ||
+          qaForm.additionalContext.value ||
+          qaForm.clarificationAnswers.value ||
+          bugForm.issueDescription.value ||
+          bugForm.bugClarificationAnswers.value
+        ) {
           await apiFetch('/api/artifacts/draft/current', {
             method: 'PUT',
-            body: JSON.stringify(getPayload()),
+            body: JSON.stringify(getDraftPayload()),
           });
         }
       }
 
       function makeHistoryTitle(payload, label) {
-        return payload.taskDescription.split(/\s+/).slice(0, 10).join(' ') || label;
+        const source = payload.taskDescription || payload.issueDescription || '';
+        return source.split(/\s+/).slice(0, 10).join(' ') || label;
       }
 
       async function saveArtifactHistory(key, label, text, payload) {
@@ -1007,12 +1138,19 @@
       }
 
       async function requestArtifact(button) {
-        const payload = getPayload();
+        const payload = getButtonPayload(button);
+        const isBugFlow = button.dataset.payloadSource === 'bug';
 
         clearError();
         setDownloadState();
 
-        if (!payload.taskDescription) {
+        if (isBugFlow && !payload.issueDescription) {
+          showError('Issue Description is required.');
+          renderResult('Add an issue description, then choose an action.');
+          return;
+        }
+
+        if (!isBugFlow && !payload.taskDescription) {
           showError('Task Description is required.');
           renderResult('Add a task description, then choose an action.');
           return;
@@ -1155,7 +1293,17 @@
         button.addEventListener('click', () => requestArtifact(button));
       });
 
-      [form.taskDescription, form.additionalContext, form.clarificationAnswers].forEach((field) => {
+      tabButtons.forEach((button) => {
+        button.addEventListener('click', () => setActiveTab(button.dataset.tab));
+      });
+
+      [
+        qaForm.taskDescription,
+        qaForm.additionalContext,
+        qaForm.clarificationAnswers,
+        bugForm.issueDescription,
+        bugForm.bugClarificationAnswers,
+      ].forEach((field) => {
         field.addEventListener('input', saveDraft);
       });
 
@@ -1166,6 +1314,11 @@
       logoutButton.addEventListener('click', logout);
 
       historyButton.addEventListener('click', () => {
+        renderHistoryList();
+        historyPanel.classList.toggle('visible');
+      });
+
+      bugHistoryButton.addEventListener('click', () => {
         renderHistoryList();
         historyPanel.classList.toggle('visible');
       });

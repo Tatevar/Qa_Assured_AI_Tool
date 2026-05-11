@@ -19,7 +19,17 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { key, label, title, text, taskDescription, additionalContext, clarificationAnswers } = req.body || {};
+  const {
+    key,
+    label,
+    title,
+    text,
+    taskDescription,
+    additionalContext,
+    clarificationAnswers,
+    issueDescription,
+    bugClarificationAnswers,
+  } = req.body || {};
 
   if (typeof key !== 'string' || typeof text !== 'string' || !text.trim()) {
     return res.status(400).json({
@@ -39,6 +49,8 @@ router.post('/', (req, res) => {
     taskDescription: typeof taskDescription === 'string' ? taskDescription : '',
     additionalContext: typeof additionalContext === 'string' ? additionalContext : '',
     clarificationAnswers: typeof clarificationAnswers === 'string' ? clarificationAnswers : '',
+    issueDescription: typeof issueDescription === 'string' ? issueDescription : '',
+    bugClarificationAnswers: typeof bugClarificationAnswers === 'string' ? bugClarificationAnswers : '',
     createdAt: new Date().toISOString(),
   };
 
@@ -86,6 +98,9 @@ router.put('/draft/current', (req, res) => {
     taskDescription: typeof req.body?.taskDescription === 'string' ? req.body.taskDescription : '',
     additionalContext: typeof req.body?.additionalContext === 'string' ? req.body.additionalContext : '',
     clarificationAnswers: typeof req.body?.clarificationAnswers === 'string' ? req.body.clarificationAnswers : '',
+    issueDescription: typeof req.body?.issueDescription === 'string' ? req.body.issueDescription : '',
+    bugClarificationAnswers: typeof req.body?.bugClarificationAnswers === 'string' ? req.body.bugClarificationAnswers : '',
+    activeTab: req.body?.activeTab === 'bug' ? 'bug' : 'requirements',
   };
   const existingDraft = db.drafts.find((item) => item.userId === req.user.id);
 

@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import { generateQaArtifact } from '../aiClient.js';
+import { formatBugReport } from '../bugReportFormatter.js';
 import {
   analyzeRisksPrompt,
   analyzeStoryPrompt,
+  generateBugQuestionsPrompt,
+  generateBugReportPrompt,
   generateChecklistPrompt,
   generateQuestionsPrompt,
   generateTestCasesPrompt,
@@ -17,6 +20,19 @@ function validateTaskDescription(req, res, next) {
     return res.status(400).json({
       error: 'ValidationError',
       message: 'taskDescription is required and must be a non-empty string.',
+    });
+  }
+
+  return next();
+}
+
+function validateIssueDescription(req, res, next) {
+  const { issueDescription } = req.body || {};
+
+  if (typeof issueDescription !== 'string' || !issueDescription.trim()) {
+    return res.status(400).json({
+      error: 'ValidationError',
+      message: 'issueDescription is required and must be a non-empty string.',
     });
   }
 
@@ -94,6 +110,32 @@ router.post(
 
     res.json({
       testCases,
+    });
+  }),
+);
+
+router.post(
+  '/generate-bug-questions',
+  validateIssueDescription,
+  asyncHandler(async (req, res) => {
+    const prompt = generateBugQuestionsPrompt(req.body);
+    const bugQuestions = await generateQaArtifact(prompt);
+
+    res.json({
+      bugQuestions,
+    });
+  }),
+);
+
+router.post(
+  '/generate-bug-report',
+  validateIssueDescription,
+  asyncHandler(async (req, res) => {
+    const prompt = generateBugReportPrompt(req.body);
+    const bugReport = formatBugReport(await generateQaArtifact(prompt));
+
+    res.json({
+      bugReport,
     });
   }),
 );

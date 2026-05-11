@@ -15,6 +15,16 @@ ${normalizeOptionalText(clarificationAnswers)}
 `.trim();
 }
 
+function bugInput({ issueDescription, clarificationAnswers }) {
+  return `
+Issue description:
+${issueDescription.trim()}
+
+Clarification answers:
+${normalizeOptionalText(clarificationAnswers)}
+`.trim();
+}
+
 export function analyzeStoryPrompt({ taskDescription, additionalContext }) {
   return `
 You are a Senior QA Engineer analyzing a user story or feature description from a risk-based testing perspective.
@@ -154,5 +164,67 @@ Rules:
 - Use Markdown headings and bullets.
 
 ${baseInput({ taskDescription, additionalContext, clarificationAnswers })}
+`.trim();
+}
+
+export function generateBugQuestionsPrompt({ issueDescription, clarificationAnswers }) {
+  return `
+You are a Senior QA Engineer preparing a bug ticket from raw issue notes.
+
+Generate only clarification questions that would materially improve the bug report.
+
+Group questions by:
+- Environment
+- Reproduction Steps
+- Actual vs Expected Result
+- Scope and Impact
+- Evidence
+
+Rules:
+- Ask only questions that are missing, ambiguous, or important for developers to reproduce and fix the issue.
+- Do not ask generic questions when the provided issue already answers them.
+- Keep questions short and precise.
+- If no important questions are needed, return exactly: No critical clarification questions are needed.
+- Use Markdown headings and bullets.
+
+${bugInput({ issueDescription, clarificationAnswers })}
+`.trim();
+}
+
+export function generateBugReportPrompt({ issueDescription, clarificationAnswers }) {
+  return `
+You are a Senior QA Engineer writing a clear, developer-ready bug report.
+
+Create a bug report from the issue description and any clarification answers.
+
+The report must use this structure:
+# Bug Report
+
+**Title:** [Area][Feature/Platform] concise symptom
+
+**Environment:**
+- [environment detail or Not provided]
+
+**Steps to Reproduce:**
+1. [first executable step]
+
+**Actual Result:**
+[observed behavior as plain text, not a bullet list]
+
+**Expected Result:**
+[expected behavior as plain text, not a bullet list]
+
+Rules:
+- Keep the report specific to the provided issue.
+- Preserve important product names, payment methods, platforms, and observed behavior.
+- Infer reasonable bug-report wording from the description, but do not invent missing facts.
+- Use "Not provided" for unknown environment, data, account, browser, device, version, or evidence.
+- Make steps concise, numbered, and directly executable.
+- Use bold section labels exactly as shown.
+- Do not include Severity, Priority, Affected Area, Reproducibility, or Clarification Questions sections.
+- Do not use bullet points or numbered lists in Actual Result or Expected Result.
+- Do not end any sentence or list item with a period.
+
+${bugInput({ issueDescription, clarificationAnswers })}
 `.trim();
 }

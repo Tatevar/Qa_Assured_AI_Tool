@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
@@ -7,8 +8,21 @@ import { promisify } from 'util';
 const scrypt = promisify(crypto.scrypt);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dataDir = path.join(__dirname, '..', 'data');
+const bundledDataDir = path.join(__dirname, '..', 'data');
+const dataDir = process.env.VERCEL
+  ? path.join(os.tmpdir(), 'qa-assured-ai-tool')
+  : bundledDataDir;
 const dbPath = path.join(dataDir, 'app-data.json');
+const bundledDbPath = path.join(bundledDataDir, 'app-data.json');
+
+function createEmptyDb() {
+  return {
+    users: [],
+    sessions: [],
+    artifacts: [],
+    drafts: [],
+  };
+}
 
 function ensureDb() {
   if (!fs.existsSync(dataDir)) {
@@ -16,12 +30,11 @@ function ensureDb() {
   }
 
   if (!fs.existsSync(dbPath)) {
-    writeDb({
-      users: [],
-      sessions: [],
-      artifacts: [],
-      drafts: [],
-    });
+    const initialDb = dbPath !== bundledDbPath && fs.existsSync(bundledDbPath)
+      ? JSON.parse(fs.readFileSync(bundledDbPath, 'utf8'))
+      : createEmptyDb();
+
+    writeDb(initialDb);
   }
 }
 
