@@ -59,9 +59,15 @@ function collapseBlankLines(lines) {
   return collapsed.join('\n').trim();
 }
 
-export function formatBugReport(report) {
+export function formatBugReport(report, options = {}) {
   if (typeof report !== 'string') {
     return '';
+  }
+
+  const removedSectionLabels = new Set(REMOVED_SECTION_LABELS);
+
+  if (options.includeEvidence === false) {
+    removedSectionLabels.add('Evidence');
   }
 
   const formattedLines = [];
@@ -80,7 +86,7 @@ export function formatBugReport(report) {
       skipRemovedSection = false;
     }
 
-    if (REMOVED_SECTION_LABELS.has(sectionLabel)) {
+    if (removedSectionLabels.has(sectionLabel)) {
       skipRemovedSection = true;
       activeSection = '';
       continue;

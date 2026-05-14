@@ -161,6 +161,82 @@
         outline: 3px solid rgba(15, 118, 110, 0.16);
       }
 
+      .file-upload {
+        display: grid;
+        gap: 10px;
+      }
+
+      .file-input {
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        color: var(--text);
+        background: #ffffff;
+        font: inherit;
+      }
+
+      .attachment-preview {
+        display: none;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        background: #fbfcfe;
+      }
+
+      .attachment-preview.visible {
+        display: grid;
+      }
+
+      .attachment-detail {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .attachment-thumb {
+        display: grid;
+        place-items: center;
+        width: 56px;
+        height: 56px;
+        flex: 0 0 56px;
+        object-fit: cover;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #ffffff;
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .attachment-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 700;
+      }
+
+      .attachment-meta {
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
+      .clear-attachment-button {
+        min-height: 34px;
+        padding: 0 10px;
+        background: #667085;
+        font-size: 0.86rem;
+      }
+
+      .clear-attachment-button:hover:not(:disabled) {
+        background: #344054;
+      }
+
       .actions,
       .download-actions {
         display: flex;
@@ -490,12 +566,19 @@
             </div>
 
             <div class="field">
-              <label for="bugClarificationAnswers">Clarification Answers</label>
-              <textarea id="bugClarificationAnswers" name="bugClarificationAnswers" placeholder="Paste answers to generated questions or extra investigation notes before creating the bug report."></textarea>
+              <label for="bugClarificationAnswers">Additional Details</label>
+              <textarea id="bugClarificationAnswers" name="bugClarificationAnswers" placeholder="Add any extra investigation notes before creating the bug report."></textarea>
+            </div>
+
+            <div class="field">
+              <label for="bugAttachment">File / Screenshot Upload</label>
+              <div class="file-upload">
+                <input id="bugAttachment" class="file-input" name="bugAttachment" type="file" accept="image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json,.log,.pdf" />
+                <div id="bugAttachmentPreview" class="attachment-preview" aria-live="polite"></div>
+              </div>
             </div>
 
             <div class="actions">
-              <button type="button" data-endpoint="/api/qa/generate-bug-questions" data-result-key="bugQuestions" data-payload-source="bug">Clarify Questions</button>
               <button type="button" data-endpoint="/api/qa/generate-bug-report" data-result-key="bugReport" data-payload-source="bug">Generate Bug Report</button>
               <button type="button" id="bugHistoryButton" class="secondary-button">History</button>
             </div>
@@ -559,24 +642,29 @@
       const registerButton = document.querySelector('#registerButton');
       const cancelRegisterButton = document.querySelector('#cancelRegisterButton');
       const logoutButton = document.querySelector('#logoutButton');
+      const bugAttachmentInput = document.querySelector('#bugAttachment');
+      const bugAttachmentPreview = document.querySelector('#bugAttachmentPreview');
 
       const LOCAL_HISTORY_KEY = 'qaToolArtifactHistory';
       const LOCAL_DRAFT_KEY = 'qaToolFormDraft';
       const LOCAL_CURRENT_KEY = 'qaToolCurrentArtifact';
       const LOCAL_LEGACY_TEST_CASE_HISTORY_KEY = 'qaToolTestCaseHistory';
+      const MAX_BUG_ATTACHMENT_BYTES = 2.5 * 1024 * 1024;
+      const MAX_ATTACHMENT_TEXT_CHARS = 12000;
+      const READABLE_ATTACHMENT_TYPES = new Set(['application/json', 'text/csv', 'text/plain']);
       const artifactLabels = {
         analysis: 'Analyze Story',
         questions: 'Generate Questions',
         checklist: 'Generate Checklist',
         testCases: 'Generate Test Cases',
         risks: 'Analyze Risks',
-        bugQuestions: 'Clarify Questions',
         bugReport: 'Generate Bug Report',
       };
       const HISTORY_LIMIT = 30;
 
       let currentUser = null;
       let serverHistory = [];
+      let bugAttachment = null;
       let currentArtifact = {
         key: '',
         label: '',
@@ -607,6 +695,121 @@
         }
 
         return data;
+      }
+
+      function formatFileSize(bytes) {
+        if (!Number.isFinite(bytes) || bytes <= 0) {
+          return 'Unknown size';
+        }
+
+        const units = ['B', 'KB', 'MB'];
+        let size = bytes;
+        let unitIndex = 0;
+
+        while (size >= 1024 && unitIndex < units.length - 1) {
+          size /= 1024;
+          unitIndex += 1;
+        }
+
+        return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+      }
+
+      function readFile(file, mode) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+
+          reader.addEventListener('load', () => resolve(reader.result));
+          reader.addEventListener('error', () => reject(new Error('Unable to read attachment.')));
+
+          if (mode === 'text') {
+            reader.readAsText(file);
+          } else {
+            reader.readAsDataURL(file);
+          }
+        });
+      }
+
+      function isReadableAttachment(file) {
+        return READABLE_ATTACHMENT_TYPES.has(file.type) || /\.(csv|json|log|txt)$/i.test(file.name);
+      }
+
+      async function buildBugAttachment(file) {
+        if (!file) {
+          return null;
+        }
+
+        if (file.size > MAX_BUG_ATTACHMENT_BYTES) {
+          throw new Error('Attachment must be 2.5 MB or smaller.');
+        }
+
+        const attachment = {
+          name: file.name,
+          type: file.type || 'Unknown type',
+          size: file.size,
+          kind: 'file',
+        };
+
+        if (file.type.startsWith('image/')) {
+          return {
+            ...attachment,
+            kind: 'image',
+            dataUrl: await readFile(file, 'dataUrl'),
+          };
+        }
+
+        if (isReadableAttachment(file)) {
+          return {
+            ...attachment,
+            kind: 'text',
+            text: String(await readFile(file, 'text')).slice(0, MAX_ATTACHMENT_TEXT_CHARS),
+          };
+        }
+
+        return attachment;
+      }
+
+      function renderBugAttachment() {
+        bugAttachmentPreview.innerHTML = '';
+        bugAttachmentPreview.classList.toggle('visible', Boolean(bugAttachment));
+
+        if (!bugAttachment) {
+          return;
+        }
+
+        const detail = document.createElement('div');
+        const media = bugAttachment.kind === 'image' ? document.createElement('img') : document.createElement('div');
+        const info = document.createElement('div');
+        const name = document.createElement('div');
+        const meta = document.createElement('div');
+        const removeButton = document.createElement('button');
+
+        detail.className = 'attachment-detail';
+        media.className = 'attachment-thumb';
+
+        if (bugAttachment.kind === 'image') {
+          media.src = bugAttachment.dataUrl;
+          media.alt = bugAttachment.name;
+        } else {
+          media.textContent = 'File';
+        }
+
+        name.className = 'attachment-name';
+        name.textContent = bugAttachment.name;
+        meta.className = 'attachment-meta';
+        meta.textContent = `${bugAttachment.type || 'Unknown type'} - ${formatFileSize(bugAttachment.size)}`;
+        info.append(name, meta);
+        detail.append(media, info);
+
+        removeButton.type = 'button';
+        removeButton.className = 'clear-attachment-button';
+        removeButton.textContent = 'Remove file';
+        removeButton.addEventListener('click', () => {
+          bugAttachment = null;
+          bugAttachmentInput.value = '';
+          renderBugAttachment();
+        });
+
+        bugAttachmentPreview.append(detail, removeButton);
       }
 
       function getDraftPayload() {
@@ -641,11 +844,17 @@
       }
 
       function getBugPayload() {
-        return {
+        const payload = {
           issueDescription: bugForm.issueDescription.value.trim(),
           clarificationAnswers: bugForm.bugClarificationAnswers.value.trim(),
           bugClarificationAnswers: bugForm.bugClarificationAnswers.value.trim(),
         };
+
+        if (bugAttachment) {
+          payload.attachments = [bugAttachment];
+        }
+
+        return payload;
       }
 
       function getButtonPayload(button) {
@@ -880,6 +1089,9 @@
 
       async function saveArtifactHistory(key, label, text, payload) {
         const title = makeHistoryTitle(payload, label);
+        const historyPayload = { ...payload };
+
+        delete historyPayload.attachments;
 
         if (currentUser) {
           const data = await readJsonResponse(await apiFetch('/api/artifacts', {
@@ -889,7 +1101,7 @@
               label,
               title,
               text,
-              ...payload,
+              ...historyPayload,
             }),
           }));
           serverHistory = [data.artifact, ...serverHistory].slice(0, HISTORY_LIMIT);
@@ -1305,6 +1517,21 @@
         bugForm.bugClarificationAnswers,
       ].forEach((field) => {
         field.addEventListener('input', saveDraft);
+      });
+
+      bugAttachmentInput.addEventListener('change', async () => {
+        clearError();
+
+        try {
+          bugAttachment = await buildBugAttachment(bugAttachmentInput.files?.[0]);
+          renderBugAttachment();
+          statusEl.textContent = bugAttachment ? 'File attached' : 'Ready';
+        } catch (err) {
+          bugAttachment = null;
+          bugAttachmentInput.value = '';
+          renderBugAttachment();
+          showError(err.message || 'Unable to attach file.');
+        }
       });
 
       loginButton.addEventListener('click', login);

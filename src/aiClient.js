@@ -41,10 +41,34 @@ function getOpenAiErrorMessage(err) {
   return message || 'Failed to generate QA artifact from OpenAI.';
 }
 
-export async function generateQaArtifact(prompt) {
+function buildUserContent(prompt, imageAttachments = []) {
+  const validImageAttachments = imageAttachments.filter((attachment) => {
+    return attachment && typeof attachment.dataUrl === 'string' && attachment.dataUrl.startsWith('data:image/');
+  });
+
+  if (!validImageAttachments.length) {
+    return prompt;
+  }
+
+  return [
+    {
+      type: 'text',
+      text: prompt,
+    },
+    ...validImageAttachments.map((attachment) => ({
+      type: 'image_url',
+      image_url: {
+        url: attachment.dataUrl,
+      },
+    })),
+  ];
+}
+
+export async function generateQaArtifact(prompt, options = {}) {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   const maxOutputTokens = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 1800);
+  const userContent = buildUserContent(prompt, options.imageAttachments);
 
   if (!apiKey) {
     const error = new Error('OPENAI_API_KEY is not configured. Add it to your .env file.');
@@ -64,7 +88,7 @@ export async function generateQaArtifact(prompt) {
         },
         {
           role: 'user',
-          content: prompt,
+          content: userContent,
         },
       ],
     });
