@@ -1651,6 +1651,64 @@
           .join('\n');
       }
 
+      function parseNumberedItems(value) {
+        const items = [];
+
+        cleanMultiline(value).split('\n').forEach((line) => {
+          const match = line.match(/^(\t*)\d+\.\s*(.*)$/);
+
+          if (match) {
+            items.push({
+              indent: match[1] || '',
+              text: match[2].trim(),
+            });
+            return;
+          }
+
+          if (items.length) {
+            items[items.length - 1].text = `${items[items.length - 1].text}\n${line}`;
+          } else if (line.trim()) {
+            items.push({
+              indent: '',
+              text: line.trim(),
+            });
+          }
+        });
+
+        return items.filter((item) => item.text);
+      }
+
+      function quoteQaseStepContent(value) {
+        return `"${String(value || '').replace(/"/g, '""')}"`;
+      }
+
+      function formatQaseV2StepColumn(values, count) {
+        return Array.from({ length: count }, (_, index) => {
+          const item = values[index] || { indent: '', text: '' };
+
+          return `${item.indent}${index + 1}. ${quoteQaseStepContent(item.text)}`;
+        }).join('\n');
+      }
+
+      function buildQaseV2Steps(testCase) {
+        const actionItems = parseNumberedItems(testCase.steps);
+        const resultItems = parseNumberedItems(testCase.expectedResult);
+        const dataItems = parseNumberedItems(testCase.testData);
+        const stepCount = Math.max(actionItems.length, resultItems.length, dataItems.length, 1);
+        const alignedResults = resultItems.length === 1 && stepCount > 1
+          ? [...Array.from({ length: stepCount - 1 }, () => ({ indent: '', text: '' })), resultItems[0]]
+          : resultItems;
+        const alignedData = dataItems.length === 1 && stepCount > 1
+          ? [dataItems[0], ...Array.from({ length: stepCount - 1 }, () => ({ indent: '', text: '' }))]
+          : dataItems;
+
+        return {
+          actions: formatQaseV2StepColumn(actionItems, stepCount),
+          results: formatQaseV2StepColumn(alignedResults, stepCount),
+          data: formatQaseV2StepColumn(alignedData, stepCount),
+        };
+      }
+
       function buildQaseRow(values = {}) {
         return QASE_CSV_HEADERS.map((header) => values[header] || '');
       }
@@ -1666,10 +1724,10 @@
         return buildQaseRow({
           milestone_id: milestone.id || '',
           milestone: milestone.name || '',
-          suite_id: suite.id || '',
-          suite_parent_id: suite.parentId || '',
+          suite_id: '1',
+          suite_parent_id: '',
           suite: suite.name || 'Generated Test Cases',
-          suite_without_cases: suite.withoutCases || '1',
+          suite_without_cases: '1',
         });
       }
 
@@ -1678,6 +1736,7 @@
         const milestone = context?.milestone || {};
         const defaults = context?.defaults || {};
         const type = testCase.type || 'Positive';
+        const steps = buildQaseV2Steps(testCase);
 
         return buildQaseRow({
           'v2.id': '',
@@ -1695,13 +1754,13 @@
           is_flaky: defaults.isFlaky || 'no',
           layer: defaults.layer || 'unknown',
           steps_type: defaults.stepsType || 'classic',
-          steps_actions: cleanMultiline(testCase.steps),
-          steps_result: cleanMultiline(testCase.expectedResult),
-          steps_data: cleanMultiline(testCase.testData),
+          steps_actions: steps.actions,
+          steps_result: steps.results,
+          steps_data: steps.data,
           milestone_id: milestone.id || '',
           milestone: milestone.name || '',
-          suite_id: suite.id || '',
-          suite_parent_id: suite.parentId || '',
+          suite_id: '1',
+          suite_parent_id: '',
           suite: suite.name || 'Generated Test Cases',
           suite_without_cases: '',
           parameters: testCase.parameters,
@@ -1764,7 +1823,7 @@
           ...parseTestCases(text).map((testCase) => buildQaseCaseRow(testCase, context)),
         ];
 
-        return `\uFEFF${rows.map((row) => row.map(csvEscape).join(',')).join('\r\n')}`;
+        return rows.map((row) => row.map(csvEscape).join(',')).join('\r\n');
       }
 
       async function requestArtifact(button) {
