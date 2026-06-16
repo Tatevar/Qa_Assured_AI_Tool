@@ -1679,15 +1679,11 @@
         return items.filter((item) => item.text);
       }
 
-      function quoteQaseStepContent(value) {
-        return `"${String(value || '').replace(/"/g, '""')}"`;
-      }
-
       function formatQaseV2StepColumn(values, count) {
         return Array.from({ length: count }, (_, index) => {
           const item = values[index] || { indent: '', text: '' };
 
-          return `${item.indent}${index + 1}. ${quoteQaseStepContent(item.text)}`;
+          return `${item.indent}${index + 1}. ${item.text || ''}`;
         }).join('\n');
       }
 
