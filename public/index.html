@@ -1544,7 +1544,8 @@
 
       function readField(block, label) {
         const fieldPattern = TEST_CASE_FIELD_LABELS.map(escapeRegExp).join('|');
-        const pattern = new RegExp(`(?:^|\\n)-\\s*${escapeRegExp(label)}:\\s*([\\s\\S]*?)(?=\\n-\\s*(?:${fieldPattern}):|\\n#{1,3}\\s+TC-|$)`, 'i');
+        const nextCasePattern = '\\n\\s*(?:#{1,6}\\s*)?(?:\\*\\*)?TC[-\\s]?\\d+';
+        const pattern = new RegExp(`(?:^|\\n)-\\s*${escapeRegExp(label)}:\\s*([\\s\\S]*?)(?=\\n-\\s*(?:${fieldPattern}):|${nextCasePattern}|$)`, 'i');
         const match = block.match(pattern);
         return match ? match[1].trim() : '';
       }
@@ -1731,7 +1732,7 @@
         });
       }
 
-      function buildQaseCaseRow(testCase, context) {
+      function buildQaseCaseRow(testCase, context, index) {
         const suite = context?.suite || {};
         const milestone = context?.milestone || {};
         const defaults = context?.defaults || {};
@@ -1739,7 +1740,7 @@
         const steps = buildQaseV2Steps(testCase);
 
         return buildQaseRow({
-          'v2.id': '',
+          'v2.id': String(index + 1),
           title: testCase.title,
           description: testCase.description,
           preconditions: testCase.preconditions,
@@ -1768,17 +1769,34 @@
         });
       }
 
+      function getTestCaseBlocks(text) {
+        const normalized = String(text || '').trim();
+        const headingPattern = /(?:^|\n)\s*(?:#{1,6}\s*)?(?:\*\*)?TC[-\s]?\d+\s*(?:[:.\-–—]|\*\*)?/gi;
+        const matches = [...normalized.matchAll(headingPattern)];
+
+        if (!matches.length) {
+          return normalized ? [normalized] : [];
+        }
+
+        return matches.map((match, index) => {
+          const start = match.index + (match[0].startsWith('\n') ? 1 : 0);
+          const end = matches[index + 1]
+            ? matches[index + 1].index + (matches[index + 1][0].startsWith('\n') ? 1 : 0)
+            : normalized.length;
+
+          return normalized.slice(start, end).trim();
+        }).filter(Boolean);
+      }
+
       function parseTestCases(text) {
         const normalized = String(text || '').trim();
-        const blocks = normalized
-          .split(/(?=^#{1,3}\s+TC-\d+)/gim)
-          .map((block) => block.trim())
-          .filter(Boolean);
+        const blocks = getTestCaseBlocks(normalized);
         const parsed = blocks.map((block, index) => {
-          const heading = block.match(/^#{1,3}\s*(TC-\d+)\s*[:.-]?\s*(.*)$/im);
+          const heading = block.match(/^\s*(?:#{1,6}\s*)?(TC[-\s]?\d+)\s*(?:[:.\-–—]|\*\*)?\s*(.*)$/im);
+          const normalizedId = heading?.[1]?.replace(/\s+/g, '-').toUpperCase();
 
           return {
-            id: heading?.[1] || `TC-${String(index + 1).padStart(3, '0')}`,
+            id: normalizedId || `TC-${String(index + 1).padStart(3, '0')}`,
             title: heading?.[2]?.trim() || readField(block, 'Title') || `Generated Test Case ${index + 1}`,
             description: readField(block, 'Description'),
             priority: readField(block, 'Priority'),
@@ -1820,10 +1838,13 @@
         const rows = [
           QASE_CSV_HEADERS,
           buildQaseSuiteRow(context),
-          ...parseTestCases(text).map((testCase) => buildQaseCaseRow(testCase, context)),
+          ...parseTestCases(text).map((testCase, index) => buildQaseCaseRow(testCase, context, index)),
         ];
 
-        return rows.map((row) => row.map(csvEscape).join(',')).join('\r\n');
+        return [
+          QASE_CSV_HEADERS.join(','),
+          ...rows.slice(1).map((row) => row.map(csvEscape).join(',')),
+        ].join('\r\n');
       }
 
       async function requestArtifact(button) {
