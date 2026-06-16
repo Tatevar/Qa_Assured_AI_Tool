@@ -2,7 +2,56 @@ function normalizeOptionalText(value, fallback = 'Not provided') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
-function baseInput({ taskDescription, additionalContext, clarificationAnswers }) {
+function qaseCsvContextInput(qaseCsvContext) {
+  if (!qaseCsvContext || typeof qaseCsvContext !== 'object') {
+    return 'None';
+  }
+
+  const lines = [];
+  const suite = qaseCsvContext.suite || {};
+  const milestone = qaseCsvContext.milestone || {};
+  const defaults = qaseCsvContext.defaults || {};
+  const existingCases = Array.isArray(qaseCsvContext.existingCases) ? qaseCsvContext.existingCases : [];
+
+  if (qaseCsvContext.name) {
+    lines.push(`File: ${qaseCsvContext.name}`);
+  }
+
+  if (Number.isFinite(Number(qaseCsvContext.rowCount))) {
+    lines.push(`Imported rows: ${qaseCsvContext.rowCount}`);
+  }
+
+  if (Array.isArray(qaseCsvContext.headers) && qaseCsvContext.headers.length) {
+    lines.push(`Columns: ${qaseCsvContext.headers.join(', ')}`);
+  }
+
+  if (suite.name || suite.id || suite.parentId) {
+    lines.push(`Qase suite: ${suite.name || 'Not provided'} (suite_id: ${suite.id || 'Not provided'}, suite_parent_id: ${suite.parentId || 'Not provided'})`);
+  }
+
+  if (milestone.name || milestone.id) {
+    lines.push(`Qase milestone: ${milestone.name || 'Not provided'} (milestone_id: ${milestone.id || 'Not provided'})`);
+  }
+
+  if (Object.values(defaults).some(Boolean)) {
+    lines.push(`Qase defaults: ${Object.entries(defaults)
+      .filter(([, value]) => Boolean(value))
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(', ')}`);
+  }
+
+  if (existingCases.length) {
+    lines.push(`Existing case titles to avoid duplicating: ${existingCases
+      .map((testCase) => testCase.title)
+      .filter(Boolean)
+      .slice(0, 40)
+      .join('; ')}`);
+  }
+
+  return lines.length ? lines.join('\n') : 'None';
+}
+
+function baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext }) {
   return `
 Task description:
 ${taskDescription.trim()}
@@ -12,6 +61,9 @@ ${normalizeOptionalText(additionalContext)}
 
 Clarification answers:
 ${normalizeOptionalText(clarificationAnswers)}
+
+Uploaded Qase CSV context:
+${qaseCsvContextInput(qaseCsvContext)}
 `.trim();
 }
 
@@ -150,42 +202,71 @@ ${baseInput({ taskDescription, additionalContext, clarificationAnswers })}
 `.trim();
 }
 
-export function generateTestCasesPrompt({ taskDescription, additionalContext, clarificationAnswers }) {
+export function generateTestCasesPrompt({
+  taskDescription,
+  additionalContext,
+  clarificationAnswers,
+  qaseCsvContext,
+}) {
   return `
-You are a Senior QA Engineer writing detailed executable manual test cases.
+You are a Senior QA Engineer and QA test architect writing detailed executable manual test cases for Qase.io.
 
-Generate practical test cases from the story, context, and clarification answers.
+Generate a comprehensive, risk-based manual test suite from the story, context, clarification answers, and any uploaded Qase CSV context.
+
+Coverage model:
+- Positive flows for every core user journey and successful state transition.
+- Negative flows for invalid input, blocked actions, rejected permissions, failed saves, and unavailable dependencies.
+- Edge cases for empty/null values, min/max boundaries, special characters, duplicates, stale data, refresh/back navigation, pagination/search/filter boundaries, timezone/date boundaries, and cross-device persistence when relevant.
+- Regression coverage for nearby existing functionality, saved data, permissions, integrations, audit/logging, notifications, and UI states.
+- Abuse/break-the-app coverage for concurrency, rapid repeated clicks, interrupted network/API calls, expired sessions, partial data, and recovery from errors.
 
 Each test case must include:
 - Test Case ID
 - Title
+- Description
 - Priority: High, Medium, or Low
+- Severity: Blocker, Critical, Major, Normal, Minor, or Trivial
 - Preconditions
 - Test Data
 - Steps
 - Expected Result
+- Postconditions
 - Type: Positive, Negative, Edge Case, or Regression
+- Qase Type: functional, regression, security, performance, usability, or other
+- Behavior: positive, negative, or destructive
+- Tags
 
 Format each test case exactly as:
 ## TC-001: Title
+- Description: ...
 - Priority: High|Medium|Low
+- Severity: Blocker|Critical|Major|Normal|Minor|Trivial
 - Preconditions: ...
 - Test Data: ...
 - Steps:
   1. ...
   2. ...
 - Expected Result: ...
+- Postconditions: ...
 - Type: Positive|Negative|Edge Case|Regression
+- Qase Type: functional|regression|security|performance|usability|other
+- Behavior: positive|negative|destructive
+- Tags: tag-one, tag-two
 
 Rules:
 - Do not generate generic QA content.
-- Cover the highest-risk and most important user flows first.
-- Include positive, negative, edge case, validation, permissions, and regression scenarios when relevant.
+- Cover the highest-risk and most important user flows first, then add negative, edge, and regression tests that a strong QA engineer would use to break the app.
+- Generate at least one positive and one negative scenario for each main user flow when the provided scope contains enough information.
+- Include validation, permissions, data integrity, state transitions, error handling, integration failure, concurrency, and regression scenarios when relevant.
+- Use the uploaded Qase CSV context to reuse suite, milestone, import defaults, and existing-case awareness.
+- Avoid duplicating existing case titles from the uploaded Qase CSV unless the new case materially expands coverage.
 - Keep steps clear enough for a QA engineer to execute manually.
+- Include concrete expected results that verify UI feedback, persisted data, permission state, and downstream side effects when relevant.
+- Mark destructive checks as destructive behavior and keep them safe for controlled QA environments.
 - Do not invent unrelated product behavior.
 - Use Markdown headings and numbered steps.
 
-${baseInput({ taskDescription, additionalContext, clarificationAnswers })}
+${baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext })}
 `.trim();
 }
 
@@ -240,11 +321,16 @@ The report must use this structure:
 Rules:
 - Keep the report specific to the provided issue.
 - Preserve important product names, payment methods, platforms, and observed behavior.
+- Preserve every distinct symptom from the issue description, especially secondary failures such as controls being disabled or not clickable.
 - Infer reasonable bug-report wording from the description, but do not invent missing facts.
+- Base the Expected Result on the control label, feature intent, or explicitly provided expectation; never turn the observed failure into expected behavior.
+- Treat "Copy", "Kopiera", and similar copy-button labels as copy-to-clipboard actions unless the issue explicitly says compose-email behavior is expected.
+- If a copy button opens an email compose window, describe that compose window as unexpected actual behavior and say the expected result is that the value is copied without opening compose.
 - Use "Not provided" for unknown environment, data, account, browser, device, version, or evidence.
 - Make steps concise, numbered, and directly executable.
 - Start reproduction steps from the user entry point, such as going to the website or opening the application.
 - Separate navigation from the triggering action: first open the specific page, then perform the action that causes the issue.
+- When one report contains multiple related trigger actions, include each trigger action in the reproduction steps.
 - Do not use a single generic step like "Open the Parking Tickets section in the application" when the issue needs website entry, page navigation, and a user action.
 - If the exact URL is not provided, write "Go to the website" or "Open the application" instead of inventing a URL.
 - Use bold section labels exactly as shown.

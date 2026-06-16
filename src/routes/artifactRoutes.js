@@ -27,6 +27,7 @@ router.post('/', (req, res) => {
     taskDescription,
     additionalContext,
     clarificationAnswers,
+    qaseCsvContext,
     issueDescription,
     bugClarificationAnswers,
   } = req.body || {};
@@ -49,6 +50,7 @@ router.post('/', (req, res) => {
     taskDescription: typeof taskDescription === 'string' ? taskDescription : '',
     additionalContext: typeof additionalContext === 'string' ? additionalContext : '',
     clarificationAnswers: typeof clarificationAnswers === 'string' ? clarificationAnswers : '',
+    qaseCsvContext: qaseCsvContext && typeof qaseCsvContext === 'object' ? qaseCsvContext : null,
     issueDescription: typeof issueDescription === 'string' ? issueDescription : '',
     bugClarificationAnswers: typeof bugClarificationAnswers === 'string' ? bugClarificationAnswers : '',
     createdAt: new Date().toISOString(),
@@ -98,6 +100,7 @@ router.put('/draft/current', (req, res) => {
     taskDescription: typeof req.body?.taskDescription === 'string' ? req.body.taskDescription : '',
     additionalContext: typeof req.body?.additionalContext === 'string' ? req.body.additionalContext : '',
     clarificationAnswers: typeof req.body?.clarificationAnswers === 'string' ? req.body.clarificationAnswers : '',
+    qaseCsvContext: req.body?.qaseCsvContext && typeof req.body.qaseCsvContext === 'object' ? req.body.qaseCsvContext : null,
     issueDescription: typeof req.body?.issueDescription === 'string' ? req.body.issueDescription : '',
     bugClarificationAnswers: typeof req.body?.bugClarificationAnswers === 'string' ? req.body.bugClarificationAnswers : '',
     activeTab: req.body?.activeTab === 'bug' ? 'bug' : 'requirements',

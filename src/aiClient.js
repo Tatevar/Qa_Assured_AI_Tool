@@ -67,7 +67,7 @@ function buildUserContent(prompt, imageAttachments = []) {
 export async function generateQaArtifact(prompt, options = {}) {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-  const maxOutputTokens = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 1800);
+  const maxOutputTokens = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 5000);
   const userContent = buildUserContent(prompt, options.imageAttachments);
 
   if (!apiKey) {

@@ -547,6 +547,14 @@
               <textarea id="clarificationAnswers" name="clarificationAnswers" placeholder="Add answers from product, design, engineering, or stakeholders."></textarea>
             </div>
 
+            <div class="field">
+              <label for="qaseCsvUpload">Qase CSV Upload</label>
+              <div class="file-upload">
+                <input id="qaseCsvUpload" class="file-input" name="qaseCsvUpload" type="file" accept="text/csv,.csv" />
+                <div id="qaseCsvPreview" class="attachment-preview" aria-live="polite"></div>
+              </div>
+            </div>
+
             <div class="actions">
               <button type="button" data-endpoint="/api/qa/analyze-story" data-result-key="analysis">Analyze Story</button>
               <button type="button" data-endpoint="/api/qa/generate-questions" data-result-key="questions">Generate Questions</button>
@@ -592,7 +600,7 @@
           </div>
           <div id="downloadActions" class="download-actions">
             <button type="button" id="downloadButton">Download</button>
-            <button type="button" id="downloadCsvButton">Download TestRail CSV</button>
+            <button type="button" id="downloadCsvButton">Download Qase CSV</button>
           </div>
           <div id="historyPanel" class="history-panel">
             <div class="history-header">
@@ -642,6 +650,8 @@
       const registerButton = document.querySelector('#registerButton');
       const cancelRegisterButton = document.querySelector('#cancelRegisterButton');
       const logoutButton = document.querySelector('#logoutButton');
+      const qaseCsvInput = document.querySelector('#qaseCsvUpload');
+      const qaseCsvPreview = document.querySelector('#qaseCsvPreview');
       const bugAttachmentInput = document.querySelector('#bugAttachment');
       const bugAttachmentPreview = document.querySelector('#bugAttachmentPreview');
 
@@ -649,8 +659,10 @@
       const LOCAL_DRAFT_KEY = 'qaToolFormDraft';
       const LOCAL_CURRENT_KEY = 'qaToolCurrentArtifact';
       const LOCAL_LEGACY_TEST_CASE_HISTORY_KEY = 'qaToolTestCaseHistory';
+      const MAX_QASE_CSV_BYTES = 2.5 * 1024 * 1024;
       const MAX_BUG_ATTACHMENT_BYTES = 2.5 * 1024 * 1024;
       const MAX_ATTACHMENT_TEXT_CHARS = 12000;
+      const MAX_QASE_EXISTING_CASES = 40;
       const READABLE_ATTACHMENT_TYPES = new Set(['application/json', 'text/csv', 'text/plain']);
       const artifactLabels = {
         analysis: 'Analyze Story',
@@ -664,11 +676,13 @@
 
       let currentUser = null;
       let serverHistory = [];
+      let qaseCsvContext = null;
       let bugAttachment = null;
       let currentArtifact = {
         key: '',
         label: '',
         text: '',
+        qaseCsvContext: null,
       };
       let activeTab = 'requirements';
       let draftTimer;
@@ -729,6 +743,139 @@
         });
       }
 
+      function parseCsv(text) {
+        const rows = [];
+        let row = [];
+        let field = '';
+        let inQuotes = false;
+        const source = String(text || '').replace(/^\uFEFF/, '');
+
+        for (let index = 0; index < source.length; index += 1) {
+          const char = source[index];
+          const nextChar = source[index + 1];
+
+          if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+              field += '"';
+              index += 1;
+            } else {
+              inQuotes = !inQuotes;
+            }
+            continue;
+          }
+
+          if (char === ',' && !inQuotes) {
+            row.push(field);
+            field = '';
+            continue;
+          }
+
+          if ((char === '\n' || char === '\r') && !inQuotes) {
+            if (char === '\r' && nextChar === '\n') {
+              index += 1;
+            }
+            row.push(field);
+            if (row.some((value) => value.trim())) {
+              rows.push(row);
+            }
+            row = [];
+            field = '';
+            continue;
+          }
+
+          field += char;
+        }
+
+        row.push(field);
+        if (row.some((value) => value.trim())) {
+          rows.push(row);
+        }
+
+        return rows;
+      }
+
+      function rowToObject(headers, row) {
+        return headers.reduce((record, header, index) => {
+          record[header] = row[index] || '';
+          return record;
+        }, {});
+      }
+
+      function compactRecord(record = {}) {
+        return Object.fromEntries(Object.entries(record).filter(([, value]) => Boolean(value)));
+      }
+
+      function buildQaseCsvContextFromRows(file, rows) {
+        const headers = rows[0] || [];
+        const headerSet = new Set(headers);
+
+        if (!headerSet.has('v2.id') || !headerSet.has('title') || !headerSet.has('suite')) {
+          throw new Error('Qase CSV must include v2.id, title, and suite columns.');
+        }
+
+        const records = rows.slice(1).map((row) => rowToObject(headers, row));
+        const caseRecords = records.filter((record) => record.title);
+        const suiteRecord = records.find((record) => {
+          return record.suite && (!record.title || record.suite_without_cases === '1');
+        }) || records.find((record) => record.suite) || {};
+        const defaultRecord = caseRecords[0] || suiteRecord;
+
+        return {
+          name: file.name,
+          size: file.size,
+          rowCount: rows.length - 1,
+          caseCount: caseRecords.length,
+          headers,
+          suite: compactRecord({
+            id: suiteRecord.suite_id,
+            parentId: suiteRecord.suite_parent_id,
+            name: suiteRecord.suite,
+            withoutCases: suiteRecord.suite_without_cases,
+          }),
+          milestone: compactRecord({
+            id: suiteRecord.milestone_id || defaultRecord.milestone_id,
+            name: suiteRecord.milestone || defaultRecord.milestone,
+          }),
+          defaults: compactRecord({
+            priority: defaultRecord.priority,
+            severity: defaultRecord.severity,
+            type: defaultRecord.type,
+            behavior: defaultRecord.behavior,
+            automation: defaultRecord.automation,
+            status: defaultRecord.status,
+            isFlaky: defaultRecord.is_flaky,
+            layer: defaultRecord.layer,
+            stepsType: defaultRecord.steps_type,
+            isMuted: defaultRecord.is_muted,
+          }),
+          existingCases: caseRecords.slice(0, MAX_QASE_EXISTING_CASES).map((record) => compactRecord({
+            id: record['v2.id'],
+            title: record.title,
+            description: record.description,
+            priority: record.priority,
+            severity: record.severity,
+            type: record.type,
+            behavior: record.behavior,
+          })),
+        };
+      }
+
+      async function buildQaseCsvContext(file) {
+        if (!file) {
+          return null;
+        }
+
+        if (file.size > MAX_QASE_CSV_BYTES) {
+          throw new Error('Qase CSV must be 2.5 MB or smaller.');
+        }
+
+        if (!/\.csv$/i.test(file.name) && file.type !== 'text/csv') {
+          throw new Error('Upload a CSV file exported from Qase.');
+        }
+
+        return buildQaseCsvContextFromRows(file, parseCsv(await readFile(file, 'text')));
+      }
+
       function isReadableAttachment(file) {
         return READABLE_ATTACHMENT_TYPES.has(file.type) || /\.(csv|json|log|txt)$/i.test(file.name);
       }
@@ -766,6 +913,48 @@
         }
 
         return attachment;
+      }
+
+      function renderQaseCsvContext() {
+        qaseCsvPreview.innerHTML = '';
+        qaseCsvPreview.classList.toggle('visible', Boolean(qaseCsvContext));
+
+        if (!qaseCsvContext) {
+          return;
+        }
+
+        const detail = document.createElement('div');
+        const media = document.createElement('div');
+        const info = document.createElement('div');
+        const name = document.createElement('div');
+        const meta = document.createElement('div');
+        const removeButton = document.createElement('button');
+        const suiteName = qaseCsvContext.suite?.name || 'No suite';
+        const caseCount = Number.isFinite(Number(qaseCsvContext.caseCount))
+          ? qaseCsvContext.caseCount
+          : Array.isArray(qaseCsvContext.existingCases) ? qaseCsvContext.existingCases.length : 0;
+
+        detail.className = 'attachment-detail';
+        media.className = 'attachment-thumb';
+        media.textContent = 'CSV';
+        name.className = 'attachment-name';
+        name.textContent = qaseCsvContext.name;
+        meta.className = 'attachment-meta';
+        meta.textContent = `${qaseCsvContext.rowCount || 0} rows - ${caseCount} cases read - ${suiteName} - ${formatFileSize(qaseCsvContext.size)}`;
+        info.append(name, meta);
+        detail.append(media, info);
+
+        removeButton.type = 'button';
+        removeButton.className = 'clear-attachment-button';
+        removeButton.textContent = 'Remove CSV';
+        removeButton.addEventListener('click', () => {
+          qaseCsvContext = null;
+          qaseCsvInput.value = '';
+          renderQaseCsvContext();
+          saveDraft();
+        });
+
+        qaseCsvPreview.append(detail, removeButton);
       }
 
       function renderBugAttachment() {
@@ -817,6 +1006,7 @@
           taskDescription: qaForm.taskDescription.value.trim(),
           additionalContext: qaForm.additionalContext.value.trim(),
           clarificationAnswers: qaForm.clarificationAnswers.value.trim(),
+          qaseCsvContext,
           issueDescription: bugForm.issueDescription.value.trim(),
           bugClarificationAnswers: bugForm.bugClarificationAnswers.value.trim(),
           activeTab,
@@ -827,6 +1017,10 @@
         qaForm.taskDescription.value = payload.taskDescription || '';
         qaForm.additionalContext.value = payload.additionalContext || '';
         qaForm.clarificationAnswers.value = payload.clarificationAnswers || '';
+        qaseCsvContext = payload.qaseCsvContext && typeof payload.qaseCsvContext === 'object'
+          ? payload.qaseCsvContext
+          : null;
+        renderQaseCsvContext();
         bugForm.issueDescription.value = payload.issueDescription || '';
         bugForm.bugClarificationAnswers.value = payload.bugClarificationAnswers || '';
 
@@ -836,11 +1030,17 @@
       }
 
       function getQaPayload() {
-        return {
+        const payload = {
           taskDescription: qaForm.taskDescription.value.trim(),
           additionalContext: qaForm.additionalContext.value.trim(),
           clarificationAnswers: qaForm.clarificationAnswers.value.trim(),
         };
+
+        if (qaseCsvContext) {
+          payload.qaseCsvContext = qaseCsvContext;
+        }
+
+        return payload;
       }
 
       function getBugPayload() {
@@ -930,6 +1130,7 @@
           key: artifact.key || '',
           label: artifact.label || '',
           text: artifact.text || '',
+          qaseCsvContext: artifact.qaseCsvContext || null,
         };
 
         const canDownloadDocx = ['checklist', 'testCases', 'bugReport'].includes(currentArtifact.key) && currentArtifact.text;
@@ -1101,6 +1302,7 @@
               label,
               title,
               text,
+              qaseCsvContext: historyPayload.qaseCsvContext || null,
               ...historyPayload,
             }),
           }));
@@ -1113,6 +1315,7 @@
             title,
             createdAt: new Date().toISOString(),
             text,
+            qaseCsvContext: historyPayload.qaseCsvContext || null,
           };
           localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify([nextItem, ...getLocalHistory()].slice(0, HISTORY_LIMIT)));
         }
@@ -1150,6 +1353,7 @@
               key: item.key,
               label: item.label || artifactLabels[item.key] || 'QA Artifact',
               text: item.text,
+              qaseCsvContext: item.qaseCsvContext || null,
             });
             persistCurrentArtifact();
             historyPanel.classList.remove('visible');
@@ -1289,64 +1493,278 @@
         return `"${text.replace(/"/g, '""')}"`;
       }
 
+      const QASE_CSV_HEADERS = [
+        'v2.id',
+        'title',
+        'description',
+        'preconditions',
+        'postconditions',
+        'tags',
+        'priority',
+        'severity',
+        'type',
+        'behavior',
+        'automation',
+        'status',
+        'is_flaky',
+        'layer',
+        'steps_type',
+        'steps_actions',
+        'steps_result',
+        'steps_data',
+        'milestone_id',
+        'milestone',
+        'suite_id',
+        'suite_parent_id',
+        'suite',
+        'suite_without_cases',
+        'parameters',
+        'is_muted',
+      ];
+      const TEST_CASE_FIELD_LABELS = [
+        'Title',
+        'Description',
+        'Priority',
+        'Severity',
+        'Preconditions',
+        'Test Data',
+        'Steps',
+        'Expected Result',
+        'Postconditions',
+        'Type',
+        'Qase Type',
+        'Behavior',
+        'Tags',
+        'Parameters',
+      ];
+
+      function escapeRegExp(value) {
+        return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }
+
       function readField(block, label) {
-        const pattern = new RegExp(`^-\\s*${label}:\\s*([\\s\\S]*?)(?=\\n-\\s*(?:Priority|Preconditions|Test Data|Steps|Expected Result|Type):|\\n##\\s+TC-|$)`, 'im');
+        const fieldPattern = TEST_CASE_FIELD_LABELS.map(escapeRegExp).join('|');
+        const pattern = new RegExp(`(?:^|\\n)-\\s*${escapeRegExp(label)}:\\s*([\\s\\S]*?)(?=\\n-\\s*(?:${fieldPattern}):|\\n#{1,3}\\s+TC-|$)`, 'i');
         const match = block.match(pattern);
         return match ? match[1].trim() : '';
       }
 
       function readSteps(block) {
-        const match = block.match(/-\s*Steps:\s*([\s\S]*?)(?=\n-\s*(?:Expected Result|Type):|\n##\s+TC-|$)/i);
-        return match ? match[1].trim() : '';
+        return readField(block, 'Steps');
+      }
+
+      function normalizeToken(value) {
+        return stripMarkdown(value)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '');
+      }
+
+      function normalizePriority(value, fallback = 'medium') {
+        const token = normalizeToken(value || fallback);
+
+        if (token.includes('high')) {
+          return 'high';
+        }
+
+        if (token.includes('low')) {
+          return 'low';
+        }
+
+        if (token.includes('medium')) {
+          return 'medium';
+        }
+
+        return token || fallback;
+      }
+
+      function normalizeSeverity(value, fallback = 'normal') {
+        const token = normalizeToken(value || fallback);
+        const allowed = ['blocker', 'critical', 'major', 'normal', 'minor', 'trivial'];
+
+        if (allowed.includes(token)) {
+          return token;
+        }
+
+        if (token.includes('high')) {
+          return 'major';
+        }
+
+        if (token.includes('medium')) {
+          return 'normal';
+        }
+
+        if (token.includes('low')) {
+          return 'minor';
+        }
+
+        return fallback;
+      }
+
+      function normalizeQaseType(value, fallback = 'other') {
+        const token = normalizeToken(value || fallback);
+        const allowed = ['functional', 'regression', 'security', 'performance', 'usability', 'other'];
+
+        if (allowed.includes(token)) {
+          return token;
+        }
+
+        if (token.includes('regression')) {
+          return 'regression';
+        }
+
+        return fallback;
+      }
+
+      function normalizeBehavior(value, fallback = 'positive') {
+        const token = normalizeToken(value || fallback);
+
+        if (token.includes('destructive')) {
+          return 'destructive';
+        }
+
+        if (token.includes('negative') || token.includes('edge')) {
+          return 'negative';
+        }
+
+        if (token.includes('positive') || token.includes('regression')) {
+          return 'positive';
+        }
+
+        return fallback;
+      }
+
+      function normalizeTags(value, type) {
+        const tags = String(value || type || '')
+          .split(',')
+          .map((tag) => normalizeToken(tag))
+          .filter(Boolean);
+
+        return [...new Set(tags)].join(',');
+      }
+
+      function cleanMultiline(value) {
+        return String(value || '')
+          .split(/\r?\n/)
+          .map((line) => stripMarkdown(line).replace(/^\s*[-*]\s+/, '').trim())
+          .filter(Boolean)
+          .join('\n');
+      }
+
+      function buildQaseRow(values = {}) {
+        return QASE_CSV_HEADERS.map((header) => values[header] || '');
+      }
+
+      function getActiveQaseContext() {
+        return currentArtifact.qaseCsvContext || qaseCsvContext || null;
+      }
+
+      function buildQaseSuiteRow(context) {
+        const suite = context?.suite || {};
+        const milestone = context?.milestone || {};
+
+        return buildQaseRow({
+          milestone_id: milestone.id || '',
+          milestone: milestone.name || '',
+          suite_id: suite.id || '',
+          suite_parent_id: suite.parentId || '',
+          suite: suite.name || 'Generated Test Cases',
+          suite_without_cases: suite.withoutCases || '1',
+        });
+      }
+
+      function buildQaseCaseRow(testCase, context) {
+        const suite = context?.suite || {};
+        const milestone = context?.milestone || {};
+        const defaults = context?.defaults || {};
+        const type = testCase.type || 'Positive';
+
+        return buildQaseRow({
+          'v2.id': '',
+          title: testCase.title,
+          description: testCase.description,
+          preconditions: testCase.preconditions,
+          postconditions: testCase.postconditions,
+          tags: normalizeTags(testCase.tags, type),
+          priority: normalizePriority(testCase.priority, defaults.priority || 'medium'),
+          severity: normalizeSeverity(testCase.severity, defaults.severity || 'normal'),
+          type: normalizeQaseType(testCase.qaseType, defaults.type || 'other'),
+          behavior: normalizeBehavior(testCase.behavior || type, defaults.behavior === 'undefined' ? 'positive' : defaults.behavior || 'positive'),
+          automation: defaults.automation || 'is-not-automated',
+          status: defaults.status || 'actual',
+          is_flaky: defaults.isFlaky || 'no',
+          layer: defaults.layer || 'unknown',
+          steps_type: defaults.stepsType || 'classic',
+          steps_actions: cleanMultiline(testCase.steps),
+          steps_result: cleanMultiline(testCase.expectedResult),
+          steps_data: cleanMultiline(testCase.testData),
+          milestone_id: milestone.id || '',
+          milestone: milestone.name || '',
+          suite_id: suite.id || '',
+          suite_parent_id: suite.parentId || '',
+          suite: suite.name || 'Generated Test Cases',
+          suite_without_cases: '',
+          parameters: testCase.parameters,
+          is_muted: defaults.isMuted || 'no',
+        });
       }
 
       function parseTestCases(text) {
-        const normalized = text.trim();
+        const normalized = String(text || '').trim();
         const blocks = normalized
-          .split(/(?=^##\s+TC-\d+)/gim)
+          .split(/(?=^#{1,3}\s+TC-\d+)/gim)
           .map((block) => block.trim())
           .filter(Boolean);
         const parsed = blocks.map((block, index) => {
-          const heading = block.match(/^##\s*(TC-\d+)\s*:?\s*(.*)$/im);
+          const heading = block.match(/^#{1,3}\s*(TC-\d+)\s*[:.-]?\s*(.*)$/im);
 
           return {
             id: heading?.[1] || `TC-${String(index + 1).padStart(3, '0')}`,
             title: heading?.[2]?.trim() || readField(block, 'Title') || `Generated Test Case ${index + 1}`,
+            description: readField(block, 'Description'),
             priority: readField(block, 'Priority'),
+            severity: readField(block, 'Severity'),
             preconditions: readField(block, 'Preconditions'),
             testData: readField(block, 'Test Data'),
             steps: readSteps(block),
             expectedResult: readField(block, 'Expected Result'),
+            postconditions: readField(block, 'Postconditions'),
             type: readField(block, 'Type'),
+            qaseType: readField(block, 'Qase Type'),
+            behavior: readField(block, 'Behavior'),
+            tags: readField(block, 'Tags'),
+            parameters: readField(block, 'Parameters'),
           };
         });
 
         return parsed.length ? parsed : [{
           id: 'TC-001',
           title: 'Generated Test Cases',
+          description: '',
           priority: '',
+          severity: '',
           preconditions: '',
           testData: '',
           steps: normalized,
           expectedResult: '',
+          postconditions: '',
           type: '',
+          qaseType: '',
+          behavior: '',
+          tags: '',
+          parameters: '',
         }];
       }
 
       function buildTestCasesCsv(text) {
-        const headers = ['Title', 'Preconditions', 'Steps', 'Expected Result', 'Priority', 'Type', 'Test Case ID', 'Test Data'];
-        const rows = parseTestCases(text).map((testCase) => [
-          testCase.title,
-          testCase.preconditions,
-          testCase.steps,
-          testCase.expectedResult,
-          testCase.priority,
-          testCase.type,
-          testCase.id,
-          testCase.testData,
-        ]);
+        const context = getActiveQaseContext();
+        const rows = [
+          QASE_CSV_HEADERS,
+          buildQaseSuiteRow(context),
+          ...parseTestCases(text).map((testCase) => buildQaseCaseRow(testCase, context)),
+        ];
 
-        return `\uFEFF${[headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n')}`;
+        return `\uFEFF${rows.map((row) => row.map(csvEscape).join(',')).join('\r\n')}`;
       }
 
       async function requestArtifact(button) {
@@ -1383,6 +1801,7 @@
             key: button.dataset.resultKey,
             label: button.textContent,
             text: resultText,
+            qaseCsvContext: payload.qaseCsvContext || null,
           });
           persistCurrentArtifact();
           await saveArtifactHistory(button.dataset.resultKey, button.textContent, resultText, payload);
@@ -1519,6 +1938,22 @@
         field.addEventListener('input', saveDraft);
       });
 
+      qaseCsvInput.addEventListener('change', async () => {
+        clearError();
+
+        try {
+          qaseCsvContext = await buildQaseCsvContext(qaseCsvInput.files?.[0]);
+          renderQaseCsvContext();
+          saveDraft();
+          statusEl.textContent = qaseCsvContext ? 'Qase CSV loaded' : 'Ready';
+        } catch (err) {
+          qaseCsvContext = null;
+          qaseCsvInput.value = '';
+          renderQaseCsvContext();
+          showError(err.message || 'Unable to load Qase CSV.');
+        }
+      });
+
       bugAttachmentInput.addEventListener('change', async () => {
         clearError();
 
@@ -1563,7 +1998,7 @@
       });
 
       downloadCsvButton.addEventListener('click', () => {
-        downloadFile(`${slugify(currentArtifact.label)}-testrail.csv`, buildTestCasesCsv(currentArtifact.text), 'text/csv;charset=utf-8');
+        downloadFile(`${slugify(currentArtifact.label)}-qase.csv`, buildTestCasesCsv(currentArtifact.text), 'text/csv;charset=utf-8');
       });
 
       migrateLegacyHistory();
