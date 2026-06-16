@@ -809,8 +809,8 @@
         const headers = rows[0] || [];
         const headerSet = new Set(headers);
 
-        if (!headerSet.has('v2.id') || !headerSet.has('title') || !headerSet.has('suite')) {
-          throw new Error('Qase CSV must include v2.id, title, and suite columns.');
+        if ((!headerSet.has('id') && !headerSet.has('v2.id')) || !headerSet.has('title') || !headerSet.has('suite')) {
+          throw new Error('Qase CSV must include id, title, and suite columns.');
         }
 
         const records = rows.slice(1).map((row) => rowToObject(headers, row));
@@ -849,7 +849,7 @@
             isMuted: defaultRecord.is_muted,
           }),
           existingCases: caseRecords.slice(0, MAX_QASE_EXISTING_CASES).map((record) => compactRecord({
-            id: record['v2.id'],
+            id: record.id || record['v2.id'],
             title: record.title,
             description: record.description,
             priority: record.priority,
@@ -1494,7 +1494,7 @@
       }
 
       const QASE_CSV_HEADERS = [
-        'v2.id',
+        'id',
         'title',
         'description',
         'preconditions',
@@ -1740,7 +1740,7 @@
         const steps = buildQaseV2Steps(testCase);
 
         return buildQaseRow({
-          'v2.id': String(index + 1),
+          id: String(index + 1),
           title: testCase.title,
           description: testCase.description,
           preconditions: testCase.preconditions,
