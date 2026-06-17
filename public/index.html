@@ -1689,21 +1689,23 @@
 
       function buildQaseV2Steps(testCase) {
         const actionItems = parseNumberedItems(testCase.steps);
-        const resultItems = parseNumberedItems(testCase.expectedResult);
         const dataItems = parseNumberedItems(testCase.testData);
-        const stepCount = Math.max(actionItems.length, resultItems.length, dataItems.length, 1);
-        const alignedResults = resultItems.length === 1 && stepCount > 1
-          ? [...Array.from({ length: stepCount - 1 }, () => ({ indent: '', text: '' })), resultItems[0]]
-          : resultItems;
+        const stepCount = Math.max(actionItems.length, dataItems.length, 1);
         const alignedData = dataItems.length === 1 && stepCount > 1
           ? [dataItems[0], ...Array.from({ length: stepCount - 1 }, () => ({ indent: '', text: '' }))]
           : dataItems;
 
         return {
           actions: formatQaseV2StepColumn(actionItems, stepCount),
-          results: formatQaseV2StepColumn(alignedResults, stepCount),
+          results: '',
           data: formatQaseV2StepColumn(alignedData, stepCount),
         };
+      }
+
+      function buildScenarioExpectedResult(testCase) {
+        const expectedResult = cleanMultiline(testCase.expectedResult);
+
+        return expectedResult || cleanMultiline(testCase.postconditions);
       }
 
       function buildQaseRow(values = {}) {
@@ -1740,7 +1742,7 @@
           title: testCase.title,
           description: testCase.description,
           preconditions: testCase.preconditions,
-          postconditions: testCase.postconditions,
+          postconditions: buildScenarioExpectedResult(testCase),
           tags: normalizeTags(testCase.tags, type),
           priority: normalizePriority(testCase.priority, defaults.priority || 'medium'),
           severity: normalizeSeverity(testCase.severity, defaults.severity || 'normal'),
