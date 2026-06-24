@@ -179,9 +179,7 @@
 
       .attachment-preview {
         display: none;
-        grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center;
-        gap: 12px;
+        gap: 10px;
         border: 1px solid var(--border);
         border-radius: 8px;
         padding: 10px;
@@ -190,6 +188,18 @@
 
       .attachment-preview.visible {
         display: grid;
+      }
+
+      .attachment-preview-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .attachment-preview-item + .attachment-preview-item {
+        border-top: 1px solid var(--border);
+        padding-top: 10px;
       }
 
       .attachment-detail {
@@ -286,6 +296,16 @@
 
       .download-actions.visible {
         display: flex;
+      }
+
+      .evidence-downloads {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .evidence-downloads:empty {
+        display: none;
       }
 
       .hidden {
@@ -574,14 +594,14 @@
             </div>
 
             <div class="field">
-              <label for="bugClarificationAnswers">Additional Details</label>
-              <textarea id="bugClarificationAnswers" name="bugClarificationAnswers" placeholder="Add any extra investigation notes before creating the bug report."></textarea>
+              <label for="bugClarificationAnswers">Additional Info</label>
+              <textarea id="bugClarificationAnswers" name="bugClarificationAnswers" placeholder="Add logs, environment details, test data, user role, browser/device info, API responses, investigation notes, or attachment context."></textarea>
             </div>
 
             <div class="field">
-              <label for="bugAttachment">File / Screenshot Upload</label>
+              <label for="bugAttachment">Evidence Upload</label>
               <div class="file-upload">
-                <input id="bugAttachment" class="file-input" name="bugAttachment" type="file" accept="image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json,.log,.pdf" />
+                <input id="bugAttachment" class="file-input" name="bugAttachment" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,text/plain,text/csv,application/json,.log,.pdf" />
                 <div id="bugAttachmentPreview" class="attachment-preview" aria-live="polite"></div>
               </div>
             </div>
@@ -601,6 +621,7 @@
           <div id="downloadActions" class="download-actions">
             <button type="button" id="downloadButton">Download</button>
             <button type="button" id="downloadCsvButton">Download Qase CSV</button>
+            <div id="evidenceDownloadActions" class="evidence-downloads"></div>
           </div>
           <div id="historyPanel" class="history-panel">
             <div class="history-header">
@@ -631,6 +652,7 @@
       const downloadActions = document.querySelector('#downloadActions');
       const downloadButton = document.querySelector('#downloadButton');
       const downloadCsvButton = document.querySelector('#downloadCsvButton');
+      const evidenceDownloadActions = document.querySelector('#evidenceDownloadActions');
       const historyButton = document.querySelector('#historyButton');
       const bugHistoryButton = document.querySelector('#bugHistoryButton');
       const historyPanel = document.querySelector('#historyPanel');
@@ -660,9 +682,13 @@
       const LOCAL_CURRENT_KEY = 'qaToolCurrentArtifact';
       const LOCAL_LEGACY_TEST_CASE_HISTORY_KEY = 'qaToolTestCaseHistory';
       const MAX_QASE_CSV_BYTES = 2.5 * 1024 * 1024;
-      const MAX_BUG_ATTACHMENT_BYTES = 2.5 * 1024 * 1024;
+      const MAX_BUG_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+      const MAX_BUG_ATTACHMENTS = 6;
       const MAX_ATTACHMENT_TEXT_CHARS = 12000;
       const MAX_QASE_EXISTING_CASES = 40;
+      const MAX_IMAGE_ANALYSIS_DIMENSION = 1600;
+      const MAX_VIDEO_FRAME_DIMENSION = 1280;
+      const VIDEO_FRAME_COUNT = 4;
       const READABLE_ATTACHMENT_TYPES = new Set(['application/json', 'text/csv', 'text/plain']);
       const artifactLabels = {
         analysis: 'Analyze Story',
@@ -677,12 +703,13 @@
       let currentUser = null;
       let serverHistory = [];
       let qaseCsvContext = null;
-      let bugAttachment = null;
+      let bugAttachments = [];
       let currentArtifact = {
         key: '',
         label: '',
         text: '',
         qaseCsvContext: null,
+        evidenceFiles: [],
       };
       let activeTab = 'requirements';
       let draftTimer;
@@ -741,6 +768,157 @@
             reader.readAsDataURL(file);
           }
         });
+      }
+
+      function getDataUrlByteLength(dataUrl) {
+        const base64 = String(dataUrl || '').split(',')[1] || '';
+        const padding = (base64.match(/=+$/) || [''])[0].length;
+
+        return Math.floor((base64.length * 3) / 4) - padding;
+      }
+
+      function dataUrlToBlob(dataUrl) {
+        const [header, base64] = String(dataUrl || '').split(',');
+        const mimeType = header?.match(/^data:([^;]+)/)?.[1] || 'application/octet-stream';
+        const binary = atob(base64 || '');
+        const bytes = new Uint8Array(binary.length);
+
+        for (let index = 0; index < binary.length; index += 1) {
+          bytes[index] = binary.charCodeAt(index);
+        }
+
+        return new Blob([bytes], { type: mimeType });
+      }
+
+      function waitForEvent(target, eventName) {
+        return new Promise((resolve, reject) => {
+          const onSuccess = () => {
+            cleanup();
+            resolve();
+          };
+          const onError = () => {
+            cleanup();
+            reject(new Error('Unable to read media file.'));
+          };
+          const cleanup = () => {
+            target.removeEventListener(eventName, onSuccess);
+            target.removeEventListener('error', onError);
+          };
+
+          target.addEventListener(eventName, onSuccess, { once: true });
+          target.addEventListener('error', onError, { once: true });
+        });
+      }
+
+      function loadImage(dataUrl) {
+        return new Promise((resolve, reject) => {
+          const image = new Image();
+
+          image.addEventListener('load', () => resolve(image), { once: true });
+          image.addEventListener('error', () => reject(new Error('Unable to read image attachment.')), { once: true });
+          image.src = dataUrl;
+        });
+      }
+
+      async function normalizeImageDataUrl(file) {
+        const originalDataUrl = await readFile(file, 'dataUrl');
+
+        if (file.size <= 8 * 1024 * 1024 && getDataUrlByteLength(originalDataUrl) <= 8 * 1024 * 1024) {
+          return originalDataUrl;
+        }
+
+        const image = await loadImage(originalDataUrl);
+        const scale = Math.min(1, MAX_IMAGE_ANALYSIS_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement('canvas');
+
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        let quality = 0.82;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+
+        while (getDataUrlByteLength(dataUrl) > 8 * 1024 * 1024 && quality > 0.45) {
+          quality -= 0.12;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+
+        return dataUrl;
+      }
+
+      function isVideoAttachment(file) {
+        return file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v)$/i.test(file.name);
+      }
+
+      function getVideoFrameTimestamps(duration) {
+        if (!Number.isFinite(duration) || duration <= 0) {
+          return [0];
+        }
+
+        return [...new Set([
+          Math.min(0.5, duration),
+          duration * 0.33,
+          duration * 0.66,
+          Math.max(0, duration - 0.5),
+        ].map((time) => Number(time.toFixed(2))))].slice(0, VIDEO_FRAME_COUNT);
+      }
+
+      async function seekVideo(video, timestamp) {
+        if (Math.abs(video.currentTime - timestamp) < 0.01 && video.readyState >= 2) {
+          return;
+        }
+
+        video.currentTime = timestamp;
+        await waitForEvent(video, 'seeked');
+      }
+
+      async function extractVideoFrames(file) {
+        const objectUrl = URL.createObjectURL(file);
+        const video = document.createElement('video');
+
+        video.preload = 'metadata';
+        video.muted = true;
+        video.playsInline = true;
+        video.src = objectUrl;
+
+        try {
+          await waitForEvent(video, 'loadedmetadata');
+
+          if (!video.videoWidth || !video.videoHeight || !Number.isFinite(video.duration) || video.duration <= 0) {
+            return [];
+          }
+
+          const scale = Math.min(1, MAX_VIDEO_FRAME_DIMENSION / Math.max(video.videoWidth, video.videoHeight));
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+
+          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+
+          const frames = [];
+
+          for (const timestamp of getVideoFrameTimestamps(video.duration)) {
+            await seekVideo(video, timestamp);
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            frames.push({
+              name: `${file.name} frame ${frames.length + 1}`,
+              type: 'image/jpeg',
+              size: 0,
+              kind: 'image',
+              timestamp,
+              dataUrl: canvas.toDataURL('image/jpeg', 0.78),
+            });
+          }
+
+          return frames.map((frame) => ({
+            ...frame,
+            size: getDataUrlByteLength(frame.dataUrl),
+          }));
+        } catch {
+          return [];
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
       }
 
       function parseCsv(text) {
@@ -886,7 +1064,7 @@
         }
 
         if (file.size > MAX_BUG_ATTACHMENT_BYTES) {
-          throw new Error('Attachment must be 2.5 MB or smaller.');
+          throw new Error('Attachment must be 50 MB or smaller.');
         }
 
         const attachment = {
@@ -894,13 +1072,22 @@
           type: file.type || 'Unknown type',
           size: file.size,
           kind: 'file',
+          file,
         };
 
         if (file.type.startsWith('image/')) {
           return {
             ...attachment,
             kind: 'image',
-            dataUrl: await readFile(file, 'dataUrl'),
+            dataUrl: await normalizeImageDataUrl(file),
+          };
+        }
+
+        if (isVideoAttachment(file)) {
+          return {
+            ...attachment,
+            kind: 'video',
+            frames: await extractVideoFrames(file),
           };
         }
 
@@ -924,6 +1111,7 @@
         }
 
         const detail = document.createElement('div');
+        const item = document.createElement('div');
         const media = document.createElement('div');
         const info = document.createElement('div');
         const name = document.createElement('div');
@@ -954,51 +1142,64 @@
           saveDraft();
         });
 
-        qaseCsvPreview.append(detail, removeButton);
+        item.className = 'attachment-preview-item';
+        item.append(detail, removeButton);
+        qaseCsvPreview.append(item);
       }
 
       function renderBugAttachment() {
         bugAttachmentPreview.innerHTML = '';
-        bugAttachmentPreview.classList.toggle('visible', Boolean(bugAttachment));
+        bugAttachmentPreview.classList.toggle('visible', bugAttachments.length > 0);
 
-        if (!bugAttachment) {
+        if (!bugAttachments.length) {
           return;
         }
 
-        const detail = document.createElement('div');
-        const media = bugAttachment.kind === 'image' ? document.createElement('img') : document.createElement('div');
-        const info = document.createElement('div');
-        const name = document.createElement('div');
-        const meta = document.createElement('div');
-        const removeButton = document.createElement('button');
+        bugAttachments.forEach((bugAttachment, index) => {
+          const detail = document.createElement('div');
+          const item = document.createElement('div');
+          const previewFrame = bugAttachment.frames?.[0]?.dataUrl;
+          const media = bugAttachment.kind === 'image' || previewFrame ? document.createElement('img') : document.createElement('div');
+          const info = document.createElement('div');
+          const name = document.createElement('div');
+          const meta = document.createElement('div');
+          const removeButton = document.createElement('button');
 
-        detail.className = 'attachment-detail';
-        media.className = 'attachment-thumb';
+          detail.className = 'attachment-detail';
+          item.className = 'attachment-preview-item';
+          media.className = 'attachment-thumb';
 
-        if (bugAttachment.kind === 'image') {
-          media.src = bugAttachment.dataUrl;
-          media.alt = bugAttachment.name;
-        } else {
-          media.textContent = 'File';
-        }
+          if (bugAttachment.kind === 'image') {
+            media.src = bugAttachment.dataUrl;
+            media.alt = bugAttachment.name;
+          } else if (previewFrame) {
+            media.src = previewFrame;
+            media.alt = `${bugAttachment.name} preview`;
+          } else {
+            media.textContent = bugAttachment.kind === 'video' ? 'MP4' : bugAttachment.kind === 'text' ? 'Text' : 'File';
+          }
 
-        name.className = 'attachment-name';
-        name.textContent = bugAttachment.name;
-        meta.className = 'attachment-meta';
-        meta.textContent = `${bugAttachment.type || 'Unknown type'} - ${formatFileSize(bugAttachment.size)}`;
-        info.append(name, meta);
-        detail.append(media, info);
+          name.className = 'attachment-name';
+          name.textContent = bugAttachment.name;
+          meta.className = 'attachment-meta';
+          meta.textContent = `${bugAttachment.type || 'Unknown type'} - ${formatFileSize(bugAttachment.size)}${bugAttachment.frames?.length ? ` - ${bugAttachment.frames.length} frames sampled` : ''}`;
+          info.append(name, meta);
+          detail.append(media, info);
 
-        removeButton.type = 'button';
-        removeButton.className = 'clear-attachment-button';
-        removeButton.textContent = 'Remove file';
-        removeButton.addEventListener('click', () => {
-          bugAttachment = null;
-          bugAttachmentInput.value = '';
-          renderBugAttachment();
+          removeButton.type = 'button';
+          removeButton.className = 'clear-attachment-button';
+          removeButton.textContent = 'Remove file';
+          removeButton.addEventListener('click', () => {
+            bugAttachments.splice(index, 1);
+            if (!bugAttachments.length) {
+              bugAttachmentInput.value = '';
+            }
+            renderBugAttachment();
+          });
+
+          item.append(detail, removeButton);
+          bugAttachmentPreview.append(item);
         });
-
-        bugAttachmentPreview.append(detail, removeButton);
       }
 
       function getDraftPayload() {
@@ -1043,6 +1244,15 @@
         return payload;
       }
 
+      function serializeBugAttachmentForApi(attachment) {
+        const {
+          file,
+          ...apiAttachment
+        } = attachment;
+
+        return apiAttachment;
+      }
+
       function getBugPayload() {
         const payload = {
           issueDescription: bugForm.issueDescription.value.trim(),
@@ -1050,8 +1260,8 @@
           bugClarificationAnswers: bugForm.bugClarificationAnswers.value.trim(),
         };
 
-        if (bugAttachment) {
-          payload.attachments = [bugAttachment];
+        if (bugAttachments.length) {
+          payload.attachments = bugAttachments.map(serializeBugAttachmentForApi);
         }
 
         return payload;
@@ -1125,21 +1335,69 @@
         });
       }
 
+      function getEvidenceDownloadLabel(attachment = {}) {
+        if (attachment.kind === 'image' || /^image\//i.test(attachment.type || '')) {
+          return 'Screenshot';
+        }
+
+        if (attachment.kind === 'video' || /^video\//i.test(attachment.type || '') || /\.mp4$/i.test(attachment.name || '')) {
+          return 'Recording';
+        }
+
+        return 'Evidence';
+      }
+
+      function canDownloadEvidenceFile(attachment = {}) {
+        return attachment.file instanceof Blob || typeof attachment.dataUrl === 'string';
+      }
+
+      function renderEvidenceDownloadButtons() {
+        evidenceDownloadActions.innerHTML = '';
+
+        (currentArtifact.evidenceFiles || []).forEach((attachment, index) => {
+          if (!canDownloadEvidenceFile(attachment)) {
+            return;
+          }
+
+          const button = document.createElement('button');
+          const label = getEvidenceDownloadLabel(attachment);
+
+          button.type = 'button';
+          button.textContent = `Download ${label} ${index + 1}`;
+          button.title = attachment.name || label;
+          button.addEventListener('click', () => downloadEvidenceFile(attachment));
+          evidenceDownloadActions.append(button);
+        });
+      }
+
+      function getStoredEvidenceMetadata(evidenceFiles = []) {
+        return evidenceFiles.map((attachment) => ({
+          name: attachment.name,
+          type: attachment.type,
+          size: attachment.size,
+          kind: attachment.kind,
+        }));
+      }
+
       function setDownloadState(artifact = {}) {
         currentArtifact = {
           key: artifact.key || '',
           label: artifact.label || '',
           text: artifact.text || '',
           qaseCsvContext: artifact.qaseCsvContext || null,
+          evidenceFiles: Array.isArray(artifact.evidenceFiles) ? artifact.evidenceFiles : [],
         };
 
         const canDownloadDocx = ['checklist', 'testCases', 'bugReport'].includes(currentArtifact.key) && currentArtifact.text;
         const canDownloadCsv = currentArtifact.key === 'testCases' && currentArtifact.text;
+        const canDownloadEvidence = currentArtifact.evidenceFiles.some(canDownloadEvidenceFile);
 
-        downloadActions.classList.toggle('visible', Boolean(canDownloadDocx));
+        downloadActions.classList.toggle('visible', Boolean(canDownloadDocx || canDownloadEvidence));
         downloadButton.disabled = !canDownloadDocx;
+        downloadButton.classList.toggle('hidden', !canDownloadDocx);
         downloadCsvButton.disabled = !canDownloadCsv;
         downloadCsvButton.classList.toggle('hidden', !canDownloadCsv);
+        renderEvidenceDownloadButtons();
       }
 
       function persistCurrentArtifact() {
@@ -1148,7 +1406,10 @@
           return;
         }
 
-        localStorage.setItem(LOCAL_CURRENT_KEY, JSON.stringify(currentArtifact));
+        localStorage.setItem(LOCAL_CURRENT_KEY, JSON.stringify({
+          ...currentArtifact,
+          evidenceFiles: getStoredEvidenceMetadata(currentArtifact.evidenceFiles),
+        }));
       }
 
       function restoreLocalDraft() {
@@ -1394,11 +1655,24 @@
         document.body.appendChild(link);
         link.click();
         link.remove();
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
 
       function downloadFile(filename, content, mimeType) {
         downloadBlob(filename, new Blob([content], { type: mimeType }));
+      }
+
+      function downloadEvidenceFile(attachment = {}) {
+        const filename = attachment.name || 'evidence-file';
+
+        if (attachment.file instanceof Blob) {
+          downloadBlob(filename, attachment.file);
+          return;
+        }
+
+        if (typeof attachment.dataUrl === 'string') {
+          downloadBlob(filename, dataUrlToBlob(attachment.dataUrl));
+        }
       }
 
       function stripMarkdown(value) {
@@ -1880,6 +2154,7 @@
             label: button.textContent,
             text: resultText,
             qaseCsvContext: payload.qaseCsvContext || null,
+            evidenceFiles: isBugFlow ? bugAttachments : [],
           });
           persistCurrentArtifact();
           await saveArtifactHistory(button.dataset.resultKey, button.textContent, resultText, payload);
@@ -2036,11 +2311,19 @@
         clearError();
 
         try {
-          bugAttachment = await buildBugAttachment(bugAttachmentInput.files?.[0]);
+          const files = [...(bugAttachmentInput.files || [])];
+
+          if (files.length > MAX_BUG_ATTACHMENTS) {
+            throw new Error(`Upload ${MAX_BUG_ATTACHMENTS} bug evidence files or fewer.`);
+          }
+
+          bugAttachments = [];
           renderBugAttachment();
-          statusEl.textContent = bugAttachment ? 'File attached' : 'Ready';
+          bugAttachments = (await Promise.all(files.map((file) => buildBugAttachment(file)))).filter(Boolean);
+          renderBugAttachment();
+          statusEl.textContent = bugAttachments.length ? 'Evidence attached' : 'Ready';
         } catch (err) {
-          bugAttachment = null;
+          bugAttachments = [];
           bugAttachmentInput.value = '';
           renderBugAttachment();
           showError(err.message || 'Unable to attach file.');

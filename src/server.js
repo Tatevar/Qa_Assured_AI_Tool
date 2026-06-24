@@ -22,7 +22,7 @@ app.use(cors({
   origin: true,
   credentials: true,
 }));
-app.use(express.json({ limit: '6mb' }));
+app.use(express.json({ limit: '30mb' }));
 app.use(attachUser);
 app.use(express.static(publicPath));
 

@@ -72,7 +72,7 @@ function formatBytes(bytes) {
     return 'Unknown size';
   }
 
-  const units = ['B', 'KB', 'MB'];
+  const units = ['B', 'KB', 'MB', 'GB'];
   let size = bytes;
   let unitIndex = 0;
 
@@ -99,10 +99,14 @@ function attachmentInput(attachments = []) {
       ? `\n  Extracted text:\n${attachment.text.trim()}`
       : '';
     const imageNote = attachment.kind === 'image'
-      ? '\n  Visual evidence is attached to the request'
+      ? '\n  Screenshot/visual evidence is attached to the request'
+      : '';
+    const videoFrameCount = Array.isArray(attachment.frames) ? attachment.frames.length : 0;
+    const videoNote = attachment.kind === 'video'
+      ? `\n  Recording file is attached as evidence${videoFrameCount ? `; ${videoFrameCount} sampled frame(s) are attached for visual analysis` : '; automatic recording analysis is not available for this file'}`
       : '';
 
-    return `- ${name} (${type}, ${size})${imageNote}${evidenceText}`;
+    return `- ${name} (${type}, ${size})${imageNote}${videoNote}${evidenceText}`;
   }).join('\n');
 }
 
@@ -111,7 +115,7 @@ function bugInput({ issueDescription, clarificationAnswers, attachments }) {
 Issue description:
 ${issueDescription.trim()}
 
-Clarification answers:
+Additional info:
 ${normalizeOptionalText(clarificationAnswers)}
 
 Uploaded evidence:
@@ -213,12 +217,22 @@ You are a Senior QA Engineer and QA test architect writing detailed executable m
 
 Generate a comprehensive, risk-based manual test suite from the story, context, clarification answers, and any uploaded Qase CSV context.
 
+Coverage sizing:
+- First analyze the full story, acceptance criteria, business rules, UI behavior, validations, permissions, integrations, data states, channels, and edge cases.
+- Decide the number of test cases from the complexity and risk of the story.
+- Simple stories may need fewer than 10 test cases.
+- Complex stories may need more than 10 test cases.
+- Do not stop at exactly 10 test cases when meaningful scenarios are still missing.
+- Generate as many test cases as needed to cover the story properly without adding filler.
+
 Coverage model:
 - Positive flows for every core user journey and successful state transition.
 - Negative flows for invalid input, blocked actions, rejected permissions, failed saves, and unavailable dependencies.
 - Edge cases for empty/null values, min/max boundaries, special characters, duplicates, stale data, refresh/back navigation, pagination/search/filter boundaries, timezone/date boundaries, and cross-device persistence when relevant.
 - Regression coverage for nearby existing functionality, saved data, permissions, integrations, audit/logging, notifications, and UI states.
 - Abuse/break-the-app coverage for concurrency, rapid repeated clicks, interrupted network/API calls, expired sessions, partial data, and recovery from errors.
+- UI and platform coverage for display rules, create vs edit behavior, default values, unsupported values, mobile/web/terminal/API differences, and different channels or entry points when relevant.
+- Data and business-rule coverage for existing data impact, cross-field dependencies, price/calculation logic, backend validation behavior, and integration side effects when relevant.
 
 Each test case must include:
 - Test Case ID
@@ -258,6 +272,7 @@ Rules:
 - Cover the highest-risk and most important user flows first, then add negative, edge, and regression tests that a strong QA engineer would use to break the app.
 - Generate at least one positive and one negative scenario for each main user flow when the provided scope contains enough information.
 - Include validation, permissions, data integrity, state transitions, error handling, integration failure, concurrency, and regression scenarios when relevant.
+- Include permission-based behavior, different user roles, default values, unsupported values, edit vs create behavior, and UI display rules when relevant.
 - Use the uploaded Qase CSV context to reuse suite, milestone, import defaults, and existing-case awareness.
 - Avoid duplicating existing case titles from the uploaded Qase CSV unless the new case materially expands coverage.
 - Keep steps clear enough for a QA engineer to execute manually.
@@ -294,12 +309,12 @@ export function generateBugReportPrompt({ issueDescription, clarificationAnswers
   return `
 You are a Senior QA Engineer writing a clear, developer-ready bug report.
 
-Create a bug report from the issue description, clarification answers, and uploaded evidence.
+Create a bug report from the issue description, Additional info, and uploaded evidence.
 
 The report must use this structure:
 # Bug Report
 
-**Title:** [Area][Feature/Platform] concise symptom
+**Title:** Concise sentence-case symptom
 
 **Environment:**
 - [environment detail or Not provided]
@@ -312,17 +327,26 @@ The report must use this structure:
 **Actual Result:**
 [observed behavior as plain text, not a bullet list]
 
-**Expected Result:**
-[expected behavior as plain text, not a bullet list]
-
 **Evidence:**
 [uploaded filename and relevant visual or text evidence, omit this section when no evidence is uploaded]
 
+**Expected Result:**
+[expected behavior as plain text, not a bullet list]
+
+**Additional Info:**
+[relevant extra context, logs, test data, user role, browser/device details, API response details, investigation notes, or Not provided]
+
+**Severity / Priority:**
+[severity and priority when provided or clearly inferable, otherwise omit this section]
+
 Rules:
 - Keep the report specific to the provided issue.
+- Title must be sentence case: only the first word starts with an uppercase letter unless a product name, acronym, proper noun, or required technical term needs its capitalization preserved.
+- Preserve important acronyms and product/technical names such as API, SMS, ID, URL, ANPR, PayGo, MP4, UI, QA, Qase, iOS, and Android.
 - Preserve important product names, payment methods, platforms, and observed behavior.
 - Preserve every distinct symptom from the issue description, especially secondary failures such as controls being disabled or not clickable.
 - Infer reasonable bug-report wording from the description, but do not invent missing facts.
+- Always analyze Additional info and use it in the correct section when relevant: title, environment, preconditions, steps, actual result, expected result, evidence, notes, investigation details, attachments, severity, or priority.
 - Base the Expected Result on the control label, feature intent, or explicitly provided expectation; never turn the observed failure into expected behavior.
 - Treat "Copy", "Kopiera", and similar copy-button labels as copy-to-clipboard actions unless the issue explicitly says compose-email behavior is expected.
 - If a copy button opens an email compose window, describe that compose window as unexpected actual behavior and say the expected result is that the value is copied without opening compose.
@@ -334,11 +358,13 @@ Rules:
 - Do not use a single generic step like "Open the Parking Tickets section in the application" when the issue needs website entry, page navigation, and a user action.
 - If the exact URL is not provided, write "Go to the website" or "Open the application" instead of inventing a URL.
 - Use bold section labels exactly as shown.
-- Do not include Severity, Priority, Affected Area, Reproducibility, or Clarification Questions sections.
+- Do not include Affected Area, Reproducibility, or Clarification Questions sections.
 - Do not use bullet points or numbered lists in Actual Result or Expected Result.
 - Do not end any sentence or list item with a period.
-- Use uploaded image evidence to describe visible errors, states, data, or UI mismatches.
+- Put Evidence immediately after Actual Result when a screenshot, recording, or attachment exists.
+- Use uploaded image evidence and sampled recording frames to describe visible errors, screen flow, user actions, final failed state, missing validation, incorrect UI behavior, states, data, or UI mismatches.
 - Use uploaded text evidence only when it directly supports the issue.
+- If a recording cannot be fully analyzed, still reference the recording filename in Evidence.
 - Omit the Evidence section when no file is uploaded.
 
 ${bugInput({ issueDescription, clarificationAnswers, attachments })}
