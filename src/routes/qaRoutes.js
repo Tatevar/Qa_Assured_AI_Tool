@@ -6,6 +6,7 @@ import {
   analyzeStoryPrompt,
   generateBugReportPrompt,
   generateChecklistPrompt,
+  generateGherkinTestCasesPrompt,
   generateQuestionsPrompt,
   generateTestCasesPrompt,
 } from '../prompts.js';
@@ -237,6 +238,19 @@ router.post(
 
     res.json({
       testCases,
+    });
+  }),
+);
+
+router.post(
+  '/generate-gherkin-test-cases',
+  validateTaskDescription,
+  asyncHandler(async (req, res) => {
+    const prompt = generateGherkinTestCasesPrompt(req.body);
+    const gherkinTestCases = await generateQaArtifact(prompt);
+
+    res.json({
+      gherkinTestCases,
     });
   }),
 );

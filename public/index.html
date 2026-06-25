@@ -567,7 +567,7 @@
               <textarea id="clarificationAnswers" name="clarificationAnswers" placeholder="Add answers from product, design, engineering, or stakeholders."></textarea>
             </div>
 
-            <div class="field">
+            <div id="qaseCsvField" class="field hidden" hidden>
               <label for="qaseCsvUpload">Qase CSV Upload</label>
               <div class="file-upload">
                 <input id="qaseCsvUpload" class="file-input" name="qaseCsvUpload" type="file" accept="text/csv,.csv" />
@@ -580,6 +580,7 @@
               <button type="button" data-endpoint="/api/qa/generate-questions" data-result-key="questions">Generate Questions</button>
               <button type="button" data-endpoint="/api/qa/generate-checklist" data-result-key="checklist">Generate Checklist</button>
               <button type="button" data-endpoint="/api/qa/generate-test-cases" data-result-key="testCases">Generate Test Cases</button>
+              <button type="button" data-endpoint="/api/qa/generate-gherkin-test-cases" data-result-key="gherkinTestCases">Generate Gherkin Test Cases</button>
               <button type="button" data-endpoint="/api/qa/analyze-risks" data-result-key="risks">Analyze Risks</button>
               <button type="button" id="historyButton" class="secondary-button">History</button>
             </div>
@@ -619,8 +620,10 @@
             <span id="status" class="status">Ready</span>
           </div>
           <div id="downloadActions" class="download-actions">
+            <button type="button" id="copyButton">Copy</button>
             <button type="button" id="downloadButton">Download</button>
             <button type="button" id="downloadCsvButton">Download Qase CSV</button>
+            <button type="button" id="downloadGherkinCsvButton">Download Jira RTM CSV</button>
             <div id="evidenceDownloadActions" class="evidence-downloads"></div>
           </div>
           <div id="historyPanel" class="history-panel">
@@ -650,8 +653,10 @@
       const authErrorEl = document.querySelector('#authError');
       const resultEl = document.querySelector('#result');
       const downloadActions = document.querySelector('#downloadActions');
+      const copyButton = document.querySelector('#copyButton');
       const downloadButton = document.querySelector('#downloadButton');
       const downloadCsvButton = document.querySelector('#downloadCsvButton');
+      const downloadGherkinCsvButton = document.querySelector('#downloadGherkinCsvButton');
       const evidenceDownloadActions = document.querySelector('#evidenceDownloadActions');
       const historyButton = document.querySelector('#historyButton');
       const bugHistoryButton = document.querySelector('#bugHistoryButton');
@@ -695,6 +700,7 @@
         questions: 'Generate Questions',
         checklist: 'Generate Checklist',
         testCases: 'Generate Test Cases',
+        gherkinTestCases: 'Generate Gherkin Test Cases',
         risks: 'Analyze Risks',
         bugReport: 'Generate Bug Report',
       };
@@ -1319,7 +1325,14 @@
         authErrorEl.classList.remove('visible');
       }
 
-      function renderResult(markdownText) {
+      function renderResult(markdownText, options = {}) {
+        resultEl.style.whiteSpace = options.plainText ? 'pre-wrap' : '';
+
+        if (options.plainText) {
+          resultEl.textContent = markdownText || '';
+          return;
+        }
+
         if (!window.marked || !window.DOMPurify) {
           resultEl.textContent = markdownText;
           return;
@@ -1379,6 +1392,10 @@
         }));
       }
 
+      function isGherkinArtifact(artifact = currentArtifact) {
+        return artifact.key === 'gherkinTestCases' || /gherkin/i.test(artifact.label || '');
+      }
+
       function setDownloadState(artifact = {}) {
         currentArtifact = {
           key: artifact.key || '',
@@ -1390,13 +1407,19 @@
 
         const canDownloadDocx = ['checklist', 'testCases', 'bugReport'].includes(currentArtifact.key) && currentArtifact.text;
         const canDownloadCsv = currentArtifact.key === 'testCases' && currentArtifact.text;
+        const canDownloadGherkinCsv = isGherkinArtifact(currentArtifact) && currentArtifact.text;
         const canDownloadEvidence = currentArtifact.evidenceFiles.some(canDownloadEvidenceFile);
+        const canCopyText = isGherkinArtifact(currentArtifact) && currentArtifact.text;
 
-        downloadActions.classList.toggle('visible', Boolean(canDownloadDocx || canDownloadEvidence));
+        downloadActions.classList.toggle('visible', Boolean(canCopyText || canDownloadDocx || canDownloadCsv || canDownloadGherkinCsv || canDownloadEvidence));
+        copyButton.disabled = !canCopyText;
+        copyButton.classList.toggle('hidden', !canCopyText);
         downloadButton.disabled = !canDownloadDocx;
         downloadButton.classList.toggle('hidden', !canDownloadDocx);
         downloadCsvButton.disabled = !canDownloadCsv;
         downloadCsvButton.classList.toggle('hidden', !canDownloadCsv);
+        downloadGherkinCsvButton.disabled = !canDownloadGherkinCsv;
+        downloadGherkinCsvButton.classList.toggle('hidden', !canDownloadGherkinCsv);
         renderEvidenceDownloadButtons();
       }
 
@@ -1425,7 +1448,9 @@
           const artifact = JSON.parse(localStorage.getItem(LOCAL_CURRENT_KEY) || '{}');
 
           if (artifact.text) {
-            renderResult(artifact.text);
+            renderResult(artifact.text, {
+              plainText: artifact.key === 'gherkinTestCases',
+            });
             setDownloadState(artifact);
             statusEl.textContent = 'Restored';
           }
@@ -1609,7 +1634,9 @@
           button.append(title, type, date);
           button.addEventListener('click', () => {
             clearError();
-            renderResult(item.text);
+            renderResult(item.text, {
+              plainText: item.key === 'gherkinTestCases',
+            });
             setDownloadState({
               key: item.key,
               label: item.label || artifactLabels[item.key] || 'QA Artifact',
@@ -1673,6 +1700,28 @@
         if (typeof attachment.dataUrl === 'string') {
           downloadBlob(filename, dataUrlToBlob(attachment.dataUrl));
         }
+      }
+
+      async function copyCurrentArtifactText() {
+        if (!currentArtifact.text) {
+          return;
+        }
+
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(currentArtifact.text);
+          return;
+        }
+
+        const textarea = document.createElement('textarea');
+
+        textarea.value = currentArtifact.text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '-1000px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
       }
 
       function stripMarkdown(value) {
@@ -2119,6 +2168,159 @@
         ].join('\r\n');
       }
 
+      const GHERKIN_RTM_CSV_HEADERS = ['Action', 'Input', 'Expected result', 'Group'];
+      const GHERKIN_STEP_PATTERN = /^(?:(given|when|then|and|but)\b|\*)/i;
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function normalizeGherkinKeyword(line) {
+        return line.replace(/^(given|when|then|and|but)\b/i, (keyword) => {
+          return `${keyword.charAt(0).toUpperCase()}${keyword.slice(1).toLowerCase()}`;
+        });
+      }
+
+      function cleanGherkinLine(line) {
+        return stripMarkdown(line)
+          .replace(/^\s*[-*]\s+(?=(?:Feature|Background|Scenario|Given|When|Then|And|But)\b)/i, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      function normalizeGherkinSource(text) {
+        return String(text || '')
+          .replace(/```(?:gherkin|feature)?/gi, '')
+          .replace(/```/g, '')
+          .replace(/\r\n/g, '\n')
+          .trim();
+      }
+
+      function pushActiveGherkinScenario(scenarios, activeScenario) {
+        if (activeScenario && (activeScenario.title || activeScenario.steps.length || activeScenario.examples.length)) {
+          scenarios.push(activeScenario);
+        }
+      }
+
+      function parseGherkinScenarios(text) {
+        const lines = normalizeGherkinSource(text).split('\n');
+        const scenarios = [];
+        const backgroundSteps = [];
+        let activeScenario = null;
+        let isBackground = false;
+        let isExamples = false;
+
+        lines.forEach((rawLine) => {
+          const line = cleanGherkinLine(rawLine);
+
+          if (!line || line.startsWith('#') || /^Feature:/i.test(line)) {
+            return;
+          }
+
+          if (/^Background:/i.test(line)) {
+            pushActiveGherkinScenario(scenarios, activeScenario);
+            activeScenario = null;
+            isBackground = true;
+            isExamples = false;
+            return;
+          }
+
+          const scenarioMatch = line.match(/^Scenario(?: Outline)?:\s*(.+)$/i);
+
+          if (scenarioMatch) {
+            pushActiveGherkinScenario(scenarios, activeScenario);
+            activeScenario = {
+              title: scenarioMatch[1].trim(),
+              steps: [...backgroundSteps],
+              examples: [],
+            };
+            isBackground = false;
+            isExamples = false;
+            return;
+          }
+
+          if (/^Examples:/i.test(line)) {
+            if (activeScenario) {
+              activeScenario.examples.push('Examples:');
+              isExamples = true;
+            }
+            return;
+          }
+
+          if (isExamples && activeScenario && /^\|/.test(line)) {
+            activeScenario.examples.push(line);
+            return;
+          }
+
+          if (GHERKIN_STEP_PATTERN.test(line)) {
+            const step = normalizeGherkinKeyword(line);
+
+            if (isBackground) {
+              backgroundSteps.push(step);
+              return;
+            }
+
+            if (!activeScenario) {
+              activeScenario = {
+                title: `Generated scenario ${scenarios.length + 1}`,
+                steps: [],
+                examples: [],
+              };
+            }
+
+            activeScenario.steps.push(step);
+          }
+        });
+
+        pushActiveGherkinScenario(scenarios, activeScenario);
+
+        if (scenarios.length) {
+          return scenarios;
+        }
+
+        const fallbackSteps = normalizeGherkinSource(text)
+          .split('\n')
+          .map(cleanGherkinLine)
+          .filter(Boolean);
+
+        return fallbackSteps.length ? [{
+          title: 'Generated Gherkin test cases',
+          steps: fallbackSteps,
+          examples: [],
+        }] : [];
+      }
+
+      function htmlParagraph(value) {
+        return `<p>${escapeHtml(value)}</p>`;
+      }
+
+      function buildGherkinRtmAction(scenario) {
+        return [
+          `<p><strong>Scenario: ${escapeHtml(scenario.title || 'Generated scenario')}</strong></p>`,
+          ...scenario.steps.map(htmlParagraph),
+          ...scenario.examples.map(htmlParagraph),
+        ].join('');
+      }
+
+      function buildGherkinRtmCsv(text) {
+        const rows = [
+          GHERKIN_RTM_CSV_HEADERS,
+          ...parseGherkinScenarios(text).map((scenario) => [
+            buildGherkinRtmAction(scenario),
+            '',
+            '',
+            'Default group',
+          ]),
+        ];
+
+        return rows.map((row) => row.map(csvEscape).join(',')).join('\r\n');
+      }
+
       async function requestArtifact(button) {
         const payload = getButtonPayload(button);
         const isBugFlow = button.dataset.payloadSource === 'bug';
@@ -2148,7 +2350,9 @@
           }));
           const resultText = data[button.dataset.resultKey] || 'No result returned.';
 
-          renderResult(resultText);
+          renderResult(resultText, {
+            plainText: button.dataset.resultKey === 'gherkinTestCases',
+          });
           setDownloadState({
             key: button.dataset.resultKey,
             label: button.textContent,
@@ -2350,6 +2554,15 @@
         clearHistory().catch((err) => showError(err.message || 'Unable to clear history.'));
       });
 
+      copyButton.addEventListener('click', async () => {
+        try {
+          await copyCurrentArtifactText();
+          statusEl.textContent = 'Copied';
+        } catch (err) {
+          showError(err.message || 'Unable to copy result.');
+        }
+      });
+
       downloadButton.addEventListener('click', async () => {
         try {
           downloadBlob(`${slugify(currentArtifact.label)}.docx`, await buildDocxBlob(currentArtifact.text));
@@ -2360,6 +2573,10 @@
 
       downloadCsvButton.addEventListener('click', () => {
         downloadFile(`${slugify(currentArtifact.label)}-qase.csv`, buildTestCasesCsv(currentArtifact.text), 'text/csv;charset=utf-8');
+      });
+
+      downloadGherkinCsvButton.addEventListener('click', () => {
+        downloadFile(`${slugify(currentArtifact.label)}-jira-rtm.csv`, buildGherkinRtmCsv(currentArtifact.text), 'text/csv;charset=utf-8');
       });
 
       migrateLegacyHistory();

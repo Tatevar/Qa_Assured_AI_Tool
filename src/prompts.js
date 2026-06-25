@@ -285,6 +285,64 @@ ${baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvC
 `.trim();
 }
 
+export function generateGherkinTestCasesPrompt({
+  taskDescription,
+  additionalContext,
+  clarificationAnswers,
+  qaseCsvContext,
+}) {
+  return `
+You are a Senior QA Engineer and BDD test architect writing executable Gherkin scenarios.
+
+Generate a comprehensive, risk-based Gherkin test suite from the story, context, clarification answers, and any uploaded Qase CSV context.
+
+Coverage sizing:
+- First analyze the full story, acceptance criteria, business rules, UI behavior, validations, permissions, integrations, data states, channels, and edge cases.
+- Decide the number of scenarios from the complexity and risk of the story.
+- Simple stories may need only a few scenarios.
+- Complex stories may need many scenarios.
+- Do not stop at exactly 10 scenarios when meaningful coverage is still missing.
+- Generate as many scenarios as needed to cover the story properly without adding filler.
+
+Coverage model:
+- Happy path scenarios for every core user journey and successful state transition.
+- Negative scenarios for invalid input, blocked actions, rejected permissions, failed saves, and unavailable dependencies.
+- Validation, boundary, empty/null, unsupported value, default value, and cross-field dependency scenarios when relevant.
+- Create vs edit behavior, UI display rules, backend validation behavior, roles/permissions, channels/entry points, existing data impact, and regression impact when relevant.
+- Error handling, integration failures, concurrency, interrupted network/API calls, session expiry, and recovery scenarios when relevant.
+- Price/calculation logic and mobile/web/terminal/API differences when relevant.
+
+Gherkin format:
+Feature: [feature name]
+
+  Scenario: [concise scenario title]
+    Given ...
+    And ...
+    When ...
+    And ...
+    Then ...
+    And ...
+
+Rules:
+- Use valid Gherkin only.
+- Use Given for preconditions and setup.
+- Use And after Given for additional setup or data assumptions.
+- Use When for the main user action or system event.
+- Use And after When for additional actions.
+- Use Then for the expected result.
+- Use And after Then for additional assertions.
+- Use Background only when several scenarios share the same setup.
+- Use Scenario Outline with Examples only when the same behavior must be checked across multiple data values or roles.
+- Keep every scenario specific, executable, and relevant to the provided story.
+- Cover positive, negative, validation, edge case, and regression scenarios where applicable.
+- Do not include Markdown headings, tables outside Examples, Qase fields, manual test-case metadata, or explanatory notes.
+- Do not invent unrelated product behavior.
+- Keep step wording consistent so it can be reused by automation later.
+
+${baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext })}
+`.trim();
+}
+
 export function analyzeRisksPrompt({ taskDescription, additionalContext, clarificationAnswers }) {
   return `
 You are a Senior QA Engineer analyzing QA risks for a user story or feature.
