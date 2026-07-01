@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateQaArtifact } from '../aiClient.js';
+import { generateChatReply, generateQaArtifact } from '../aiClient.js';
 import { formatBugReport } from '../bugReportFormatter.js';
 import {
   analyzeRisksPrompt,
@@ -9,6 +9,7 @@ import {
   generateGherkinTestCasesPrompt,
   generateQuestionsPrompt,
   generateTestCasesPrompt,
+  structureRequirementsChatSystemPrompt,
 } from '../prompts.js';
 
 const router = Router();
@@ -19,6 +20,8 @@ const MAX_VIDEO_FRAME_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_TEXT_CHARS = 12000;
 const IMAGE_DATA_URL_PATTERN = /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i;
 const BUG_ATTACHMENT_KINDS = new Set(['image', 'text', 'video', 'file']);
+const MAX_CHAT_MESSAGES = 20;
+const MAX_CHAT_MESSAGE_CHARS = 8000;
 
 function createValidationError(message) {
   const error = new Error(message);
@@ -251,6 +254,48 @@ router.post(
 
     res.json({
       gherkinTestCases,
+    });
+  }),
+);
+
+router.post(
+  '/structure-chat',
+  asyncHandler(async (req, res) => {
+    const { messages } = req.body || {};
+
+    if (!Array.isArray(messages) || !messages.length) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'messages is required and must be a non-empty array.',
+      });
+    }
+
+    const sanitizedMessages = messages
+      .filter((message) => (
+        message
+        && (message.role === 'user' || message.role === 'assistant')
+        && typeof message.content === 'string'
+        && message.content.trim()
+      ))
+      .slice(-MAX_CHAT_MESSAGES)
+      .map((message) => ({
+        role: message.role,
+        content: message.content.trim().slice(0, MAX_CHAT_MESSAGE_CHARS),
+      }));
+
+    if (!sanitizedMessages.length) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'messages must include at least one non-empty user or assistant message.',
+      });
+    }
+
+    const reply = await generateChatReply(sanitizedMessages, {
+      systemPrompt: structureRequirementsChatSystemPrompt(),
+    });
+
+    res.json({
+      reply,
     });
   }),
 );

@@ -241,7 +241,6 @@ Each test case must include:
 - Priority: High, Medium, or Low
 - Severity: Blocker, Critical, Major, Normal, Minor, or Trivial
 - Preconditions
-- Test Data
 - Steps
 - Expected Result
 - Postconditions
@@ -256,7 +255,6 @@ Format each test case exactly as:
 - Priority: High|Medium|Low
 - Severity: Blocker|Critical|Major|Normal|Minor|Trivial
 - Preconditions: ...
-- Test Data: ...
 - Steps:
   1. ...
   2. ...
@@ -276,9 +274,11 @@ Rules:
 - Use the uploaded Qase CSV context to reuse suite, milestone, import defaults, and existing-case awareness.
 - Avoid duplicating existing case titles from the uploaded Qase CSV unless the new case materially expands coverage.
 - Keep steps clear enough for a QA engineer to execute manually.
+- Do not include concrete test data or input values inside the steps. Describe the action to take (e.g. "Enter an existing zone ID") and let the QA engineer decide the actual values when executing the case.
 - Include concrete expected results that verify UI feedback, persisted data, permission state, and downstream side effects when relevant.
 - Mark destructive checks as destructive behavior and keep them safe for controlled QA environments.
 - Do not invent unrelated product behavior.
+- Write each Title in sentence case: capitalize only the first word, plus any proper nouns, acronyms, or product-specific terms (e.g. API, URL, ID, PayGo). Do not capitalize every word.
 - Use Markdown headings and numbered steps.
 
 ${baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext })}
@@ -334,6 +334,7 @@ Rules:
 - Use Background only when several scenarios share the same setup.
 - Use Scenario Outline with Examples only when the same behavior must be checked across multiple data values or roles.
 - Keep every scenario specific, executable, and relevant to the provided story.
+- Write each Scenario title in sentence case: capitalize only the first word, plus any proper nouns, acronyms, or product-specific terms (e.g. API, URL, ID, PayGo). Do not capitalize every word.
 - Cover positive, negative, validation, edge case, and regression scenarios where applicable.
 - Do not include Markdown headings, tables outside Examples, Qase fields, manual test-case metadata, or explanatory notes.
 - Do not invent unrelated product behavior.
@@ -360,6 +361,20 @@ Rules:
 - Use Markdown headings and bullets.
 
 ${baseInput({ taskDescription, additionalContext, clarificationAnswers })}
+`.trim();
+}
+
+export function structureRequirementsChatSystemPrompt() {
+  return `
+You are a senior QA analyst helping a teammate turn raw, messy product requirements into a clean, well-structured brief that will be used as input for AI-assisted test case generation.
+
+When the user pastes raw requirements or asks you to structure something:
+- Reorganize the content into clear sections such as Overview, User Roles, Functional Requirements, Business Rules, Acceptance Criteria, and Open Questions/Edge Cases.
+- Preserve every detail from the original text. Do not invent requirements that were not stated.
+- Call out ambiguities or missing information explicitly under "Open Questions" instead of guessing.
+- Keep the output in Markdown, concise, and ready to paste into a Task Description field for further QA analysis and test case generation.
+
+For general questions about the requirements or QA process, answer directly and helpfully in a few sentences instead of forcing a full restructure.
 `.trim();
 }
 

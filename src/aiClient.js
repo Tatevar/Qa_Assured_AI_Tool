@@ -64,6 +64,40 @@ function buildUserContent(prompt, imageAttachments = []) {
   ];
 }
 
+export async function generateChatReply(messages = [], options = {}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const maxOutputTokens = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 9000);
+
+  if (!apiKey) {
+    const error = new Error('OPENAI_API_KEY is not configured. Add it to your .env file.');
+    error.statusCode = 500;
+    throw error;
+  }
+
+  try {
+    const response = await getOpenAiClient(apiKey).chat.completions.create({
+      model,
+      temperature: 0.3,
+      max_tokens: maxOutputTokens,
+      messages: [
+        {
+          role: 'system',
+          content: options.systemPrompt || 'You are a senior QA engineer. Return concise, structured, practical testing output only.',
+        },
+        ...messages,
+      ],
+    });
+
+    return response.choices?.[0]?.message?.content?.trim() || '';
+  } catch (err) {
+    const error = new Error(getOpenAiErrorMessage(err));
+    error.statusCode = err.status || err.statusCode || 502;
+    error.details = err.error?.message || err.message;
+    throw error;
+  }
+}
+
 export async function generateQaArtifact(prompt, options = {}) {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';

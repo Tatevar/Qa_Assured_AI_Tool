@@ -102,7 +102,8 @@
 
       .auth-panel,
       form,
-      .result-panel {
+      .result-panel,
+      #chatPanel {
         padding: 22px;
       }
 
@@ -159,6 +160,98 @@
       input:focus {
         border-color: var(--accent);
         outline: 3px solid rgba(15, 118, 110, 0.16);
+      }
+
+      #taskDescription {
+        min-height: 280px;
+      }
+
+      .chat-intro {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .chat-messages {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        min-height: 260px;
+        max-height: 440px;
+        margin-bottom: 14px;
+        overflow: auto;
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        padding: 14px;
+        background: transparent;
+      }
+
+      .chat-messages:has(.chat-message) {
+        align-content: start;
+        border-style: solid;
+        background: #fbfcfe;
+      }
+
+      .chat-empty {
+        display: grid;
+        place-items: center;
+        min-height: 230px;
+        color: var(--muted);
+        text-align: center;
+        font-style: italic;
+      }
+
+      .chat-message {
+        max-width: 88%;
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+
+      .chat-message.user {
+        justify-self: end;
+        background: #e6f4f1;
+      }
+
+      .chat-message.assistant {
+        justify-self: start;
+        background: #ffffff;
+        border: 1px solid var(--border);
+      }
+
+      .chat-role {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .chat-message-content > :first-child {
+        margin-top: 0;
+      }
+
+      .chat-message-content > :last-child {
+        margin-bottom: 0;
+      }
+
+      .chat-composer {
+        display: flex;
+        align-items: flex-end;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      #chatInput {
+        flex: 1;
+        min-height: 52px;
+        max-height: 200px;
+      }
+
+      .chat-composer button {
+        flex: 0 0 auto;
+        align-self: stretch;
       }
 
       .file-upload {
@@ -483,7 +576,8 @@
 
         .auth-panel,
         form,
-        .result-panel {
+        .result-panel,
+        #chatPanel {
           padding: 16px;
         }
 
@@ -548,6 +642,7 @@
         <div class="tabs" role="tablist" aria-label="QA workspace">
           <button type="button" id="requirementsTab" class="tab-button active" role="tab" aria-selected="true" aria-controls="requirementsPanel" data-tab="requirements">Requirements analysis / Test documentation</button>
           <button type="button" id="bugTab" class="tab-button" role="tab" aria-selected="false" aria-controls="bugPanel" data-tab="bug">Bug creation</button>
+          <button type="button" id="chatTab" class="tab-button" role="tab" aria-selected="false" aria-controls="chatPanel" data-tab="chat">AI Chat (Structure Requirements)</button>
         </div>
 
         <section id="requirementsPanel" class="panel tab-panel" role="tabpanel" aria-labelledby="requirementsTab">
@@ -614,7 +709,20 @@
           </form>
         </section>
 
-        <section class="panel result-panel" aria-live="polite">
+        <section id="chatPanel" class="panel tab-panel" role="tabpanel" aria-labelledby="chatTab" hidden>
+          <p class="chat-intro">Paste raw requirements or notes below and ask the AI to structure them into a clear brief for test case generation. This chat is independent from the other tabs.</p>
+          <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+          <div class="chat-composer">
+            <textarea id="chatInput" placeholder="Paste your requirements here and press Enter to send... (Shift+Enter for a new line)"></textarea>
+            <button type="button" id="chatSendButton">Send</button>
+          </div>
+          <div class="actions">
+            <button type="button" id="chatUseButton" class="secondary-button" disabled>Use in Task Description</button>
+            <button type="button" id="chatClearButton" class="secondary-button">Clear Chat</button>
+          </div>
+        </section>
+
+        <section id="resultPanel" class="panel result-panel" aria-live="polite">
           <div class="result-heading">
             <h2>Result</h2>
             <span id="status" class="status">Ready</span>
@@ -681,10 +789,17 @@
       const qaseCsvPreview = document.querySelector('#qaseCsvPreview');
       const bugAttachmentInput = document.querySelector('#bugAttachment');
       const bugAttachmentPreview = document.querySelector('#bugAttachmentPreview');
+      const resultPanel = document.querySelector('#resultPanel');
+      const chatMessagesEl = document.querySelector('#chatMessages');
+      const chatInput = document.querySelector('#chatInput');
+      const chatSendButton = document.querySelector('#chatSendButton');
+      const chatUseButton = document.querySelector('#chatUseButton');
+      const chatClearButton = document.querySelector('#chatClearButton');
 
       const LOCAL_HISTORY_KEY = 'qaToolArtifactHistory';
       const LOCAL_DRAFT_KEY = 'qaToolFormDraft';
       const LOCAL_CURRENT_KEY = 'qaToolCurrentArtifact';
+      const LOCAL_CHAT_KEY = 'qaToolStructureChatHistory';
       const LOCAL_LEGACY_TEST_CASE_HISTORY_KEY = 'qaToolTestCaseHistory';
       const MAX_QASE_CSV_BYTES = 2.5 * 1024 * 1024;
       const MAX_BUG_ATTACHMENT_BYTES = 50 * 1024 * 1024;
@@ -705,6 +820,11 @@
         bugReport: 'Generate Bug Report',
       };
       const HISTORY_LIMIT = 30;
+      const TAB_ARTIFACT_KEYS = {
+        requirements: ['analysis', 'questions', 'checklist', 'testCases', 'gherkinTestCases', 'risks'],
+        bug: ['bugReport'],
+      };
+      const MAX_CHAT_HISTORY = 40;
 
       let currentUser = null;
       let serverHistory = [];
@@ -717,6 +837,12 @@
         qaseCsvContext: null,
         evidenceFiles: [],
       };
+      let resultStateByTab = {
+        requirements: null,
+        bug: null,
+      };
+      let chatMessages = [];
+      let chatLoading = false;
       let activeTab = 'requirements';
       let draftTimer;
 
@@ -1231,8 +1357,8 @@
         bugForm.issueDescription.value = payload.issueDescription || '';
         bugForm.bugClarificationAnswers.value = payload.bugClarificationAnswers || '';
 
-        if (payload.activeTab === 'bug') {
-          setActiveTab('bug', false);
+        if (payload.activeTab === 'bug' || payload.activeTab === 'chat') {
+          setActiveTab(payload.activeTab, false);
         }
       }
 
@@ -1278,7 +1404,7 @@
       }
 
       function setActiveTab(tabName, shouldSave = true) {
-        activeTab = tabName === 'bug' ? 'bug' : 'requirements';
+        activeTab = ['bug', 'chat'].includes(tabName) ? tabName : 'requirements';
 
         tabButtons.forEach((button) => {
           const isActive = button.dataset.tab === activeTab;
@@ -1292,6 +1418,13 @@
         });
 
         historyPanel.classList.remove('visible');
+
+        if (activeTab === 'chat') {
+          resultPanel.hidden = true;
+        } else {
+          resultPanel.hidden = false;
+          displayResultForTab(activeTab);
+        }
 
         if (shouldSave) {
           saveDraft();
@@ -1423,16 +1556,25 @@
         renderEvidenceDownloadButtons();
       }
 
-      function persistCurrentArtifact() {
-        if (!currentArtifact.text) {
-          localStorage.removeItem(LOCAL_CURRENT_KEY);
-          return;
-        }
+      function persistResultState() {
+        const toStore = {};
 
-        localStorage.setItem(LOCAL_CURRENT_KEY, JSON.stringify({
-          ...currentArtifact,
-          evidenceFiles: getStoredEvidenceMetadata(currentArtifact.evidenceFiles),
-        }));
+        Object.keys(resultStateByTab).forEach((tabKey) => {
+          const state = resultStateByTab[tabKey];
+
+          if (state && state.text) {
+            toStore[tabKey] = {
+              ...state,
+              evidenceFiles: getStoredEvidenceMetadata(state.evidenceFiles || []),
+            };
+          }
+        });
+
+        if (Object.keys(toStore).length) {
+          localStorage.setItem(LOCAL_CURRENT_KEY, JSON.stringify(toStore));
+        } else {
+          localStorage.removeItem(LOCAL_CURRENT_KEY);
+        }
       }
 
       function restoreLocalDraft() {
@@ -1443,19 +1585,35 @@
         }
       }
 
-      function restoreLocalCurrentArtifact() {
+      function restoreResultState() {
         try {
-          const artifact = JSON.parse(localStorage.getItem(LOCAL_CURRENT_KEY) || '{}');
+          const stored = JSON.parse(localStorage.getItem(LOCAL_CURRENT_KEY) || '{}');
 
-          if (artifact.text) {
-            renderResult(artifact.text, {
-              plainText: artifact.key === 'gherkinTestCases',
-            });
-            setDownloadState(artifact);
-            statusEl.textContent = 'Restored';
-          }
+          Object.keys(resultStateByTab).forEach((tabKey) => {
+            if (stored[tabKey]?.text) {
+              resultStateByTab[tabKey] = stored[tabKey];
+            }
+          });
         } catch {
           localStorage.removeItem(LOCAL_CURRENT_KEY);
+        }
+      }
+
+      function displayResultForTab(tabKey) {
+        const state = resultStateByTab[tabKey];
+
+        clearError();
+
+        if (state && state.text) {
+          renderResult(state.text, {
+            plainText: Boolean(state.plainText),
+          });
+          setDownloadState(state);
+          statusEl.textContent = state.statusText || 'Ready';
+        } else {
+          renderResult('Results will appear here.');
+          setDownloadState({});
+          statusEl.textContent = 'Ready';
         }
       }
 
@@ -1536,6 +1694,14 @@
         return currentUser ? serverHistory : getLocalHistory();
       }
 
+      function getHistoryKeysForActiveTab() {
+        return TAB_ARTIFACT_KEYS[activeTab] || TAB_ARTIFACT_KEYS.requirements;
+      }
+
+      function getTabForArtifactKey(key) {
+        return TAB_ARTIFACT_KEYS.bug.includes(key) ? 'bug' : 'requirements';
+      }
+
       async function loadServerHistory() {
         if (!currentUser) {
           serverHistory = [];
@@ -1610,7 +1776,8 @@
       }
 
       function renderHistoryList() {
-        const history = getActiveHistory();
+        const allowedKeys = new Set(getHistoryKeysForActiveTab());
+        const history = getActiveHistory().filter((item) => allowedKeys.has(item.key));
 
         if (!history.length) {
           historyList.innerHTML = '<div class="history-item">No history yet.</div>';
@@ -1633,17 +1800,23 @@
           date.textContent = new Date(item.createdAt).toLocaleString();
           button.append(title, type, date);
           button.addEventListener('click', () => {
-            clearError();
-            renderResult(item.text, {
-              plainText: item.key === 'gherkinTestCases',
-            });
-            setDownloadState({
+            const state = {
               key: item.key,
               label: item.label || artifactLabels[item.key] || 'QA Artifact',
               text: item.text,
               qaseCsvContext: item.qaseCsvContext || null,
+              evidenceFiles: [],
+              plainText: item.key === 'gherkinTestCases',
+              statusText: 'Loaded from history',
+            };
+
+            clearError();
+            renderResult(state.text, {
+              plainText: state.plainText,
             });
-            persistCurrentArtifact();
+            setDownloadState(state);
+            resultStateByTab[getTabForArtifactKey(item.key)] = state;
+            persistResultState();
             historyPanel.classList.remove('visible');
             statusEl.textContent = 'Loaded from history';
           });
@@ -1652,13 +1825,15 @@
       }
 
       async function clearHistory() {
+        const allowedKeys = new Set(getHistoryKeysForActiveTab());
+
         if (currentUser) {
-          const ids = serverHistory.map((item) => item.id);
+          const ids = serverHistory.filter((item) => allowedKeys.has(item.key)).map((item) => item.id);
           await Promise.all(ids.map((id) => apiFetch(`/api/artifacts/${id}`, { method: 'DELETE' }).catch(() => null)));
-          serverHistory = [];
+          serverHistory = serverHistory.filter((item) => !allowedKeys.has(item.key));
         } else {
-          localStorage.removeItem(LOCAL_HISTORY_KEY);
-          localStorage.removeItem(LOCAL_LEGACY_TEST_CASE_HISTORY_KEY);
+          const remaining = getLocalHistory().filter((item) => !allowedKeys.has(item.key));
+          localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(remaining));
         }
 
         renderHistoryList();
@@ -1850,7 +2025,6 @@
         'Priority',
         'Severity',
         'Preconditions',
-        'Test Data',
         'Steps',
         'Expected Result',
         'Postconditions',
@@ -2012,16 +2186,12 @@
 
       function buildQaseV2Steps(testCase) {
         const actionItems = parseNumberedItems(testCase.steps);
-        const dataItems = parseNumberedItems(testCase.testData);
-        const stepCount = Math.max(actionItems.length, dataItems.length, 1);
-        const alignedData = dataItems.length === 1 && stepCount > 1
-          ? [dataItems[0], ...Array.from({ length: stepCount - 1 }, () => ({ indent: '', text: '' }))]
-          : dataItems;
+        const stepCount = Math.max(actionItems.length, 1);
 
         return {
           actions: formatQaseV2StepColumn(actionItems, stepCount),
           results: '',
-          data: formatQaseV2StepColumn(alignedData, stepCount),
+          data: '',
         };
       }
 
@@ -2123,7 +2293,6 @@
             priority: readField(block, 'Priority'),
             severity: readField(block, 'Severity'),
             preconditions: readField(block, 'Preconditions'),
-            testData: readField(block, 'Test Data'),
             steps: readSteps(block),
             expectedResult: readField(block, 'Expected Result'),
             postconditions: readField(block, 'Postconditions'),
@@ -2142,7 +2311,6 @@
           priority: '',
           severity: '',
           preconditions: '',
-          testData: '',
           steps: normalized,
           expectedResult: '',
           postconditions: '',
@@ -2349,18 +2517,22 @@
             body: JSON.stringify(payload),
           }));
           const resultText = data[button.dataset.resultKey] || 'No result returned.';
-
-          renderResult(resultText, {
-            plainText: button.dataset.resultKey === 'gherkinTestCases',
-          });
-          setDownloadState({
+          const state = {
             key: button.dataset.resultKey,
             label: button.textContent,
             text: resultText,
             qaseCsvContext: payload.qaseCsvContext || null,
             evidenceFiles: isBugFlow ? bugAttachments : [],
+            plainText: button.dataset.resultKey === 'gherkinTestCases',
+            statusText: 'Ready',
+          };
+
+          renderResult(resultText, {
+            plainText: state.plainText,
           });
-          persistCurrentArtifact();
+          setDownloadState(state);
+          resultStateByTab[isBugFlow ? 'bug' : 'requirements'] = state;
+          persistResultState();
           await saveArtifactHistory(button.dataset.resultKey, button.textContent, resultText, payload);
         } catch (err) {
           showError(err.message || 'Something went wrong.');
@@ -2368,6 +2540,130 @@
         } finally {
           setLoading(false);
         }
+      }
+
+      function renderChatMessages() {
+        chatMessagesEl.innerHTML = '';
+
+        if (!chatMessages.length) {
+          const empty = document.createElement('div');
+
+          empty.className = 'chat-empty';
+          empty.textContent = 'Type your requirements in the box below and press Enter to start the conversation.';
+          chatMessagesEl.append(empty);
+          return;
+        }
+
+        chatMessages.forEach((message) => {
+          const wrapper = document.createElement('div');
+          const role = document.createElement('span');
+          const content = document.createElement('div');
+
+          wrapper.className = `chat-message ${message.role}`;
+          role.className = 'chat-role';
+          role.textContent = message.role === 'user' ? 'You' : 'AI';
+          content.className = 'chat-message-content';
+
+          if (message.role === 'assistant' && window.marked && window.DOMPurify) {
+            content.innerHTML = DOMPurify.sanitize(marked.parse(message.content || ''), {
+              USE_PROFILES: { html: true },
+            });
+          } else {
+            content.textContent = message.content;
+          }
+
+          wrapper.append(role, content);
+          chatMessagesEl.append(wrapper);
+        });
+
+        chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+      }
+
+      function saveChatHistory() {
+        localStorage.setItem(LOCAL_CHAT_KEY, JSON.stringify(chatMessages.slice(-MAX_CHAT_HISTORY)));
+      }
+
+      function restoreChatHistory() {
+        try {
+          chatMessages = JSON.parse(localStorage.getItem(LOCAL_CHAT_KEY) || '[]');
+        } catch {
+          chatMessages = [];
+        }
+
+        renderChatMessages();
+        updateChatUseButton();
+      }
+
+      function updateChatUseButton() {
+        chatUseButton.disabled = !chatMessages.some((message) => message.role === 'assistant');
+      }
+
+      function getLastAssistantChatMessage() {
+        for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+          if (chatMessages[index].role === 'assistant') {
+            return chatMessages[index].content;
+          }
+        }
+
+        return '';
+      }
+
+      async function sendChatMessage() {
+        const text = chatInput.value.trim();
+
+        if (!text || chatLoading) {
+          return;
+        }
+
+        clearError();
+        chatMessages.push({ role: 'user', content: text });
+        chatInput.value = '';
+        renderChatMessages();
+        saveChatHistory();
+
+        chatLoading = true;
+        chatSendButton.disabled = true;
+        statusEl.textContent = 'Working...';
+
+        try {
+          const data = await readJsonResponse(await apiFetch('/api/qa/structure-chat', {
+            method: 'POST',
+            body: JSON.stringify({
+              messages: chatMessages.map(({ role, content }) => ({ role, content })),
+            }),
+          }));
+
+          chatMessages.push({ role: 'assistant', content: data.reply || 'No response returned.' });
+          renderChatMessages();
+          saveChatHistory();
+          updateChatUseButton();
+          statusEl.textContent = 'Ready';
+        } catch (err) {
+          showError(err.message || 'Unable to reach the AI chat.');
+          statusEl.textContent = 'Ready';
+        } finally {
+          chatLoading = false;
+          chatSendButton.disabled = false;
+        }
+      }
+
+      function clearChat() {
+        chatMessages = [];
+        renderChatMessages();
+        saveChatHistory();
+        updateChatUseButton();
+      }
+
+      function useChatOutputInTaskDescription() {
+        const content = getLastAssistantChatMessage();
+
+        if (!content) {
+          return;
+        }
+
+        qaForm.taskDescription.value = content;
+        setActiveTab('requirements');
+        statusEl.textContent = 'Structured requirements added to Task Description';
       }
 
       function showRegisterForm() {
@@ -2579,17 +2875,36 @@
         downloadFile(`${slugify(currentArtifact.label)}-jira-rtm.csv`, buildGherkinRtmCsv(currentArtifact.text), 'text/csv;charset=utf-8');
       });
 
+      chatSendButton.addEventListener('click', () => {
+        sendChatMessage().catch((err) => showError(err.message || 'Unable to reach the AI chat.'));
+      });
+
+      chatInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          sendChatMessage().catch((err) => showError(err.message || 'Unable to reach the AI chat.'));
+        }
+      });
+
+      chatClearButton.addEventListener('click', clearChat);
+      chatUseButton.addEventListener('click', useChatOutputInTaskDescription);
+
       migrateLegacyHistory();
+      restoreResultState();
+      restoreChatHistory();
       restoreLocalDraft();
-      restoreLocalCurrentArtifact();
+      setActiveTab(activeTab, false);
+
+      if (resultStateByTab[activeTab]?.text) {
+        statusEl.textContent = 'Restored';
+      }
+
       initializeAuth()
         .then(() => {
           renderHistoryList();
-          setDownloadState(currentArtifact);
         })
         .catch(() => {
           renderHistoryList();
-          setDownloadState(currentArtifact);
         });
     </script>
   </body>
