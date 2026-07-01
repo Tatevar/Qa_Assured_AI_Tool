@@ -5,6 +5,21 @@ const REMOVED_SECTION_LABELS = new Set([
 ]);
 
 const RESULT_SECTION_LABELS = new Set(['Actual Result', 'Expected Result']);
+const SECTION_LABELS = [
+  'Severity / Priority',
+  'Steps to Reproduce',
+  'Clarification Questions',
+  'Additional Info',
+  'Actual Result',
+  'Expected Result',
+  'Affected Area',
+  'Reproducibility',
+  'Environment',
+  'Evidence',
+  'Priority',
+  'Severity',
+  'Title',
+];
 const PRESERVED_TITLE_TERMS = new Map([
   ['api', 'API'],
   ['sms', 'SMS'],
@@ -35,23 +50,57 @@ function sectionSetHas(sectionSet, label) {
   return [...sectionSet].some((sectionName) => sectionEquals(label, sectionName));
 }
 
-function getSectionLabel(line) {
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseSectionLine(line) {
   const trimmed = line.trim();
   const headingMatch = trimmed.match(/^#{1,6}\s+(.+?)\s*$/);
   const source = headingMatch ? headingMatch[1] : trimmed;
-  const boldMatch = source.match(/^\*\*([^*]+)\*\*:?\s*/);
 
-  if (boldMatch) {
-    return normalizeLabel(boldMatch[1]);
+  for (const sectionLabel of SECTION_LABELS) {
+    const escapedLabel = escapeRegExp(sectionLabel);
+    const patterns = [
+      new RegExp(`^\\*\\*\\s*${escapedLabel}\\s*(?:\\*\\*)?\\s*:\\*{0,2}\\s*(.*)$`, 'i'),
+      new RegExp(`^\\*\\*\\s*${escapedLabel}\\s*\\*\\*\\s*:?\\s*(.*)$`, 'i'),
+      new RegExp(`^${escapedLabel}\\s*:\\s*(.*)$`, 'i'),
+    ];
+
+    for (const pattern of patterns) {
+      const match = source.match(pattern);
+
+      if (match) {
+        return {
+          label: sectionLabel,
+          content: match[1].trim(),
+        };
+      }
+    }
+
+    if (headingMatch && sectionEquals(normalizeLabel(source), sectionLabel)) {
+      return {
+        label: sectionLabel,
+        content: '',
+      };
+    }
   }
 
-  const plainMatch = source.match(/^([A-Za-z][A-Za-z\s/]+):/);
+  return null;
+}
 
-  if (plainMatch) {
-    return normalizeLabel(plainMatch[1]);
-  }
+function getSectionLabel(line) {
+  const sectionLine = parseSectionLine(line);
 
-  return headingMatch ? normalizeLabel(source) : '';
+  return sectionLine ? sectionLine.label : '';
+}
+
+function formatSectionLabel(label) {
+  return `**${label}:**`;
+}
+
+function removeLeadingListMarker(line) {
+  return line.replace(/^(\s*)(?:[-*\u2022]|\d+[.)])\s+/, '$1');
 }
 
 function removeResultListMarker(line) {
@@ -300,7 +349,8 @@ export function formatBugReport(report, options = {}) {
 
   for (const originalLine of report.split(/\r?\n/)) {
     let line = originalLine;
-    const sectionLabel = getSectionLabel(line);
+    const sectionLine = parseSectionLine(line);
+    const sectionLabel = sectionLine ? sectionLine.label : '';
 
     if (skipRemovedSection) {
       if (!sectionLabel) {
@@ -318,6 +368,22 @@ export function formatBugReport(report, options = {}) {
 
     if (sectionLabel) {
       activeSection = sectionLabel;
+    }
+
+    if (sectionLine && !sectionEquals(sectionLabel, 'Title')) {
+      formattedLines.push(formatSectionLabel(sectionLabel));
+
+      if (sectionLine.content) {
+        const content = sectionSetHas(RESULT_SECTION_LABELS, sectionLabel)
+          ? removeLeadingListMarker(sectionLine.content)
+          : sectionLine.content;
+
+        if (content.trim()) {
+          formattedLines.push(removeTrailingSentencePeriod(content));
+        }
+      }
+
+      continue;
     }
 
     if (sectionSetHas(RESULT_SECTION_LABELS, activeSection)) {
