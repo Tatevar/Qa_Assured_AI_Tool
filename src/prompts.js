@@ -252,7 +252,8 @@ Format each test case exactly as:
   Steps
   1. ...
   2. ...
-  Expected result: ...
+
+  **Expected result:** ...
 - Priority: High|Medium|Low
 - Severity: Blocker|Critical|Major|Normal|Minor|Trivial
 - Preconditions: ...
@@ -269,7 +270,7 @@ Rules:
 - Include permission-based behavior, different user roles, default values, unsupported values, edit vs create behavior, and UI display rules when relevant.
 - Use the uploaded Qase CSV context to reuse suite, milestone, import defaults, and existing-case awareness.
 - Avoid duplicating existing case titles from the uploaded Qase CSV unless the new case materially expands coverage.
-- Put the whole test body inside Description as a "Steps" numbered list immediately followed by a single "Expected result: ..." line. Do not create separate Steps, Expected Result, or Postconditions fields outside of Description.
+- Put the whole test body inside Description as a "Steps" numbered list, then a blank line, then a single bold "**Expected result:** ..." line. Do not create separate Steps, Expected Result, or Postconditions fields outside of Description.
 - Keep steps clear enough for a QA engineer to execute manually.
 - Do not include concrete test data or input values inside the steps. Describe the action to take (e.g. "Enter an existing zone ID") and let the QA engineer decide the actual values when executing the case.
 - Make the Expected result concrete: verify UI feedback, persisted data, permission state, and downstream side effects when relevant.
@@ -278,6 +279,7 @@ Rules:
 - Do not invent unrelated product behavior.
 - Write each Title in sentence case: capitalize only the first word, plus any proper nouns, acronyms, or product-specific terms (e.g. API, URL, ID, PayGo). Do not capitalize every word.
 - Make the Title immediately understandable on its own: describe the concrete scenario in plain language (what is being done and under what condition), not a vague label.
+- Write titles the way a QA engineer would naturally describe the scenario, not from a rigid template. Do not start every title with the same word (e.g. "Verify", "Check", "Ensure", "Confirm") — vary the phrasing across the suite and lead with the subject, action, or condition being tested instead.
 - Use Markdown headings and numbered steps.
 
 ${baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext })}
