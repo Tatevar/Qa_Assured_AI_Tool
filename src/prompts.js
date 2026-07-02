@@ -237,13 +237,10 @@ Coverage model:
 Each test case must include:
 - Test Case ID
 - Title
-- Description
+- Description: the full test body, containing a numbered Steps list followed by an Expected result line (see format below)
 - Priority: High, Medium, or Low
 - Severity: Blocker, Critical, Major, Normal, Minor, or Trivial
-- Preconditions
-- Steps
-- Expected Result
-- Postconditions
+- Preconditions: only when the test case genuinely requires one
 - Type: Positive, Negative, Edge Case, or Regression
 - Qase Type: functional, regression, security, performance, usability, or other
 - Behavior: positive, negative, or destructive
@@ -251,15 +248,14 @@ Each test case must include:
 
 Format each test case exactly as:
 ## TC-001: Title
-- Description: ...
+- Description:
+  Steps
+  1. ...
+  2. ...
+  Expected result: ...
 - Priority: High|Medium|Low
 - Severity: Blocker|Critical|Major|Normal|Minor|Trivial
 - Preconditions: ...
-- Steps:
-  1. ...
-  2. ...
-- Expected Result: ...
-- Postconditions: ...
 - Type: Positive|Negative|Edge Case|Regression
 - Qase Type: functional|regression|security|performance|usability|other
 - Behavior: positive|negative|destructive
@@ -273,12 +269,15 @@ Rules:
 - Include permission-based behavior, different user roles, default values, unsupported values, edit vs create behavior, and UI display rules when relevant.
 - Use the uploaded Qase CSV context to reuse suite, milestone, import defaults, and existing-case awareness.
 - Avoid duplicating existing case titles from the uploaded Qase CSV unless the new case materially expands coverage.
+- Put the whole test body inside Description as a "Steps" numbered list immediately followed by a single "Expected result: ..." line. Do not create separate Steps, Expected Result, or Postconditions fields outside of Description.
 - Keep steps clear enough for a QA engineer to execute manually.
 - Do not include concrete test data or input values inside the steps. Describe the action to take (e.g. "Enter an existing zone ID") and let the QA engineer decide the actual values when executing the case.
-- Include concrete expected results that verify UI feedback, persisted data, permission state, and downstream side effects when relevant.
+- Make the Expected result concrete: verify UI feedback, persisted data, permission state, and downstream side effects when relevant.
+- Only include the Preconditions line when the test case genuinely needs a precondition to be true before Step 1; omit the Preconditions line entirely otherwise. Never write "None" or "N/A".
 - Mark destructive checks as destructive behavior and keep them safe for controlled QA environments.
 - Do not invent unrelated product behavior.
 - Write each Title in sentence case: capitalize only the first word, plus any proper nouns, acronyms, or product-specific terms (e.g. API, URL, ID, PayGo). Do not capitalize every word.
+- Make the Title immediately understandable on its own: describe the concrete scenario in plain language (what is being done and under what condition), not a vague label.
 - Use Markdown headings and numbered steps.
 
 ${baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext })}

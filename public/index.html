@@ -236,6 +236,40 @@
         margin-bottom: 0;
       }
 
+      .chat-typing-dots {
+        display: inline-flex;
+        gap: 4px;
+        padding: 2px 0;
+      }
+
+      .chat-typing-dots span {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--muted);
+        animation: chat-typing-bounce 1.2s infinite ease-in-out;
+      }
+
+      .chat-typing-dots span:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+
+      .chat-typing-dots span:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+
+      @keyframes chat-typing-bounce {
+        0%, 60%, 100% {
+          opacity: 0.4;
+          transform: translateY(0);
+        }
+
+        30% {
+          opacity: 1;
+          transform: translateY(-4px);
+        }
+      }
+
       .chat-composer {
         display: flex;
         align-items: flex-end;
@@ -711,6 +745,7 @@
 
         <section id="chatPanel" class="panel tab-panel" role="tabpanel" aria-labelledby="chatTab" hidden>
           <p class="chat-intro">Paste raw requirements or notes below and ask the AI to structure them into a clear brief for test case generation. This chat is independent from the other tabs.</p>
+          <div id="chatError" class="error"></div>
           <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
           <div class="chat-composer">
             <textarea id="chatInput" placeholder="Paste your requirements here and press Enter to send... (Shift+Enter for a new line)"></textarea>
@@ -791,6 +826,7 @@
       const bugAttachmentPreview = document.querySelector('#bugAttachmentPreview');
       const resultPanel = document.querySelector('#resultPanel');
       const chatMessagesEl = document.querySelector('#chatMessages');
+      const chatErrorEl = document.querySelector('#chatError');
       const chatInput = document.querySelector('#chatInput');
       const chatSendButton = document.querySelector('#chatSendButton');
       const chatUseButton = document.querySelector('#chatUseButton');
@@ -2025,9 +2061,6 @@
         'Priority',
         'Severity',
         'Preconditions',
-        'Steps',
-        'Expected Result',
-        'Postconditions',
         'Type',
         'Qase Type',
         'Behavior',
@@ -2045,10 +2078,6 @@
         const pattern = new RegExp(`(?:^|\\n)-\\s*${escapeRegExp(label)}:\\s*([\\s\\S]*?)(?=\\n-\\s*(?:${fieldPattern}):|${nextCasePattern}|$)`, 'i');
         const match = block.match(pattern);
         return match ? match[1].trim() : '';
-      }
-
-      function readSteps(block) {
-        return readField(block, 'Steps');
       }
 
       function normalizeToken(value) {
@@ -2141,66 +2170,6 @@
         return [...new Set(tags)].join(',');
       }
 
-      function cleanMultiline(value) {
-        return String(value || '')
-          .split(/\r?\n/)
-          .map((line) => stripMarkdown(line).replace(/^\s*[-*]\s+/, '').trim())
-          .filter(Boolean)
-          .join('\n');
-      }
-
-      function parseNumberedItems(value) {
-        const items = [];
-
-        cleanMultiline(value).split('\n').forEach((line) => {
-          const match = line.match(/^(\t*)\d+\.\s*(.*)$/);
-
-          if (match) {
-            items.push({
-              indent: match[1] || '',
-              text: match[2].trim(),
-            });
-            return;
-          }
-
-          if (items.length) {
-            items[items.length - 1].text = `${items[items.length - 1].text}\n${line}`;
-          } else if (line.trim()) {
-            items.push({
-              indent: '',
-              text: line.trim(),
-            });
-          }
-        });
-
-        return items.filter((item) => item.text);
-      }
-
-      function formatQaseV2StepColumn(values, count) {
-        return Array.from({ length: count }, (_, index) => {
-          const item = values[index] || { indent: '', text: '' };
-
-          return `${item.indent}${index + 1}. ${item.text || ''}`;
-        }).join('\n');
-      }
-
-      function buildQaseV2Steps(testCase) {
-        const actionItems = parseNumberedItems(testCase.steps);
-        const stepCount = Math.max(actionItems.length, 1);
-
-        return {
-          actions: formatQaseV2StepColumn(actionItems, stepCount),
-          results: '',
-          data: '',
-        };
-      }
-
-      function buildScenarioExpectedResult(testCase) {
-        const expectedResult = cleanMultiline(testCase.expectedResult);
-
-        return expectedResult || cleanMultiline(testCase.postconditions);
-      }
-
       function buildQaseRow(values = {}) {
         return QASE_CSV_HEADERS.map((header) => values[header] || '');
       }
@@ -2228,14 +2197,12 @@
         const milestone = context?.milestone || {};
         const defaults = context?.defaults || {};
         const type = testCase.type || 'Positive';
-        const steps = buildQaseV2Steps(testCase);
 
         return buildQaseRow({
           id: String(index + 1),
           title: testCase.title,
           description: testCase.description,
           preconditions: testCase.preconditions,
-          postconditions: buildScenarioExpectedResult(testCase),
           tags: normalizeTags(testCase.tags, type),
           priority: normalizePriority(testCase.priority, defaults.priority || 'medium'),
           severity: normalizeSeverity(testCase.severity, defaults.severity || 'normal'),
@@ -2245,10 +2212,7 @@
           status: defaults.status || 'actual',
           is_flaky: defaults.isFlaky || 'no',
           layer: defaults.layer || 'unknown',
-          steps_type: defaults.stepsType || 'classic',
-          steps_actions: steps.actions,
-          steps_result: steps.results,
-          steps_data: steps.data,
+          steps_type: defaults.stepsType || 'text',
           milestone_id: milestone.id || '',
           milestone: milestone.name || '',
           suite_id: '1',
@@ -2293,9 +2257,6 @@
             priority: readField(block, 'Priority'),
             severity: readField(block, 'Severity'),
             preconditions: readField(block, 'Preconditions'),
-            steps: readSteps(block),
-            expectedResult: readField(block, 'Expected Result'),
-            postconditions: readField(block, 'Postconditions'),
             type: readField(block, 'Type'),
             qaseType: readField(block, 'Qase Type'),
             behavior: readField(block, 'Behavior'),
@@ -2307,13 +2268,10 @@
         return parsed.length ? parsed : [{
           id: 'TC-001',
           title: 'Generated Test Cases',
-          description: '',
+          description: normalized,
           priority: '',
           severity: '',
           preconditions: '',
-          steps: normalized,
-          expectedResult: '',
-          postconditions: '',
           type: '',
           qaseType: '',
           behavior: '',
@@ -2608,6 +2566,39 @@
         return '';
       }
 
+      function showChatError(message) {
+        chatErrorEl.textContent = message;
+        chatErrorEl.classList.add('visible');
+      }
+
+      function clearChatError() {
+        chatErrorEl.textContent = '';
+        chatErrorEl.classList.remove('visible');
+      }
+
+      function showChatTyping() {
+        hideChatTyping();
+
+        const wrapper = document.createElement('div');
+        const role = document.createElement('span');
+        const dots = document.createElement('div');
+
+        wrapper.id = 'chatTypingIndicator';
+        wrapper.className = 'chat-message assistant';
+        role.className = 'chat-role';
+        role.textContent = 'AI';
+        dots.className = 'chat-typing-dots';
+        dots.innerHTML = '<span></span><span></span><span></span>';
+
+        wrapper.append(role, dots);
+        chatMessagesEl.append(wrapper);
+        chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+      }
+
+      function hideChatTyping() {
+        document.querySelector('#chatTypingIndicator')?.remove();
+      }
+
       async function sendChatMessage() {
         const text = chatInput.value.trim();
 
@@ -2615,7 +2606,7 @@
           return;
         }
 
-        clearError();
+        clearChatError();
         chatMessages.push({ role: 'user', content: text });
         chatInput.value = '';
         renderChatMessages();
@@ -2623,7 +2614,9 @@
 
         chatLoading = true;
         chatSendButton.disabled = true;
-        statusEl.textContent = 'Working...';
+        chatSendButton.textContent = 'Sending...';
+        chatInput.disabled = true;
+        showChatTyping();
 
         try {
           const data = await readJsonResponse(await apiFetch('/api/qa/structure-chat', {
@@ -2637,13 +2630,15 @@
           renderChatMessages();
           saveChatHistory();
           updateChatUseButton();
-          statusEl.textContent = 'Ready';
         } catch (err) {
-          showError(err.message || 'Unable to reach the AI chat.');
-          statusEl.textContent = 'Ready';
+          showChatError(err.message || 'Unable to reach the AI chat.');
         } finally {
+          hideChatTyping();
           chatLoading = false;
           chatSendButton.disabled = false;
+          chatSendButton.textContent = 'Send';
+          chatInput.disabled = false;
+          chatInput.focus();
         }
       }
 
@@ -2876,13 +2871,13 @@
       });
 
       chatSendButton.addEventListener('click', () => {
-        sendChatMessage().catch((err) => showError(err.message || 'Unable to reach the AI chat.'));
+        sendChatMessage().catch((err) => showChatError(err.message || 'Unable to reach the AI chat.'));
       });
 
       chatInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
-          sendChatMessage().catch((err) => showError(err.message || 'Unable to reach the AI chat.'));
+          sendChatMessage().catch((err) => showChatError(err.message || 'Unable to reach the AI chat.'));
         }
       });
 
