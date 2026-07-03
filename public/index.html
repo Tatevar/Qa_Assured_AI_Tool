@@ -140,6 +140,10 @@
         margin-bottom: 18px;
       }
 
+      .field small {
+        color: var(--muted);
+      }
+
       label {
         font-weight: 700;
       }
@@ -704,6 +708,15 @@
               </div>
             </div>
 
+            <div class="field">
+              <label for="designAttachment">Design Screenshot Upload</label>
+              <div class="file-upload">
+                <input id="designAttachment" class="file-input" name="designAttachment" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" />
+                <div id="designAttachmentPreview" class="attachment-preview" aria-live="polite"></div>
+              </div>
+              <small>Upload design screenshots to generate UI checks. Task Description is optional when a screenshot is attached.</small>
+            </div>
+
             <div class="actions">
               <button type="button" data-endpoint="/api/qa/analyze-story" data-result-key="analysis">Analyze Story</button>
               <button type="button" data-endpoint="/api/qa/generate-questions" data-result-key="questions">Generate Questions</button>
@@ -824,6 +837,8 @@
       const qaseCsvPreview = document.querySelector('#qaseCsvPreview');
       const bugAttachmentInput = document.querySelector('#bugAttachment');
       const bugAttachmentPreview = document.querySelector('#bugAttachmentPreview');
+      const designAttachmentInput = document.querySelector('#designAttachment');
+      const designAttachmentPreview = document.querySelector('#designAttachmentPreview');
       const resultPanel = document.querySelector('#resultPanel');
       const chatMessagesEl = document.querySelector('#chatMessages');
       const chatErrorEl = document.querySelector('#chatError');
@@ -839,7 +854,7 @@
       const LOCAL_LEGACY_TEST_CASE_HISTORY_KEY = 'qaToolTestCaseHistory';
       const MAX_QASE_CSV_BYTES = 2.5 * 1024 * 1024;
       const MAX_BUG_ATTACHMENT_BYTES = 50 * 1024 * 1024;
-      const MAX_BUG_ATTACHMENTS = 6;
+      const MAX_ATTACHMENTS = 6;
       const MAX_ATTACHMENT_TEXT_CHARS = 12000;
       const MAX_QASE_EXISTING_CASES = 40;
       const MAX_IMAGE_ANALYSIS_DIMENSION = 1600;
@@ -866,6 +881,7 @@
       let serverHistory = [];
       let qaseCsvContext = null;
       let bugAttachments = [];
+      let designAttachments = [];
       let currentArtifact = {
         key: '',
         label: '',
@@ -1226,7 +1242,7 @@
         return READABLE_ATTACHMENT_TYPES.has(file.type) || /\.(csv|json|log|txt)$/i.test(file.name);
       }
 
-      async function buildBugAttachment(file) {
+      async function buildAttachment(file) {
         if (!file) {
           return null;
         }
@@ -1315,19 +1331,15 @@
         qaseCsvPreview.append(item);
       }
 
-      function renderBugAttachment() {
-        bugAttachmentPreview.innerHTML = '';
-        bugAttachmentPreview.classList.toggle('visible', bugAttachments.length > 0);
+      function renderAttachmentPreview(attachments, previewEl, onRemove) {
+        previewEl.innerHTML = '';
+        previewEl.classList.toggle('visible', attachments.length > 0);
 
-        if (!bugAttachments.length) {
-          return;
-        }
-
-        bugAttachments.forEach((bugAttachment, index) => {
+        attachments.forEach((attachment, index) => {
           const detail = document.createElement('div');
           const item = document.createElement('div');
-          const previewFrame = bugAttachment.frames?.[0]?.dataUrl;
-          const media = bugAttachment.kind === 'image' || previewFrame ? document.createElement('img') : document.createElement('div');
+          const previewFrame = attachment.frames?.[0]?.dataUrl;
+          const media = attachment.kind === 'image' || previewFrame ? document.createElement('img') : document.createElement('div');
           const info = document.createElement('div');
           const name = document.createElement('div');
           const meta = document.createElement('div');
@@ -1337,36 +1349,50 @@
           item.className = 'attachment-preview-item';
           media.className = 'attachment-thumb';
 
-          if (bugAttachment.kind === 'image') {
-            media.src = bugAttachment.dataUrl;
-            media.alt = bugAttachment.name;
+          if (attachment.kind === 'image') {
+            media.src = attachment.dataUrl;
+            media.alt = attachment.name;
           } else if (previewFrame) {
             media.src = previewFrame;
-            media.alt = `${bugAttachment.name} preview`;
+            media.alt = `${attachment.name} preview`;
           } else {
-            media.textContent = bugAttachment.kind === 'video' ? 'MP4' : bugAttachment.kind === 'text' ? 'Text' : 'File';
+            media.textContent = attachment.kind === 'video' ? 'MP4' : attachment.kind === 'text' ? 'Text' : 'File';
           }
 
           name.className = 'attachment-name';
-          name.textContent = bugAttachment.name;
+          name.textContent = attachment.name;
           meta.className = 'attachment-meta';
-          meta.textContent = `${bugAttachment.type || 'Unknown type'} - ${formatFileSize(bugAttachment.size)}${bugAttachment.frames?.length ? ` - ${bugAttachment.frames.length} frames sampled` : ''}`;
+          meta.textContent = `${attachment.type || 'Unknown type'} - ${formatFileSize(attachment.size)}${attachment.frames?.length ? ` - ${attachment.frames.length} frames sampled` : ''}`;
           info.append(name, meta);
           detail.append(media, info);
 
           removeButton.type = 'button';
           removeButton.className = 'clear-attachment-button';
           removeButton.textContent = 'Remove file';
-          removeButton.addEventListener('click', () => {
-            bugAttachments.splice(index, 1);
-            if (!bugAttachments.length) {
-              bugAttachmentInput.value = '';
-            }
-            renderBugAttachment();
-          });
+          removeButton.addEventListener('click', () => onRemove(index));
 
           item.append(detail, removeButton);
-          bugAttachmentPreview.append(item);
+          previewEl.append(item);
+        });
+      }
+
+      function renderBugAttachment() {
+        renderAttachmentPreview(bugAttachments, bugAttachmentPreview, (index) => {
+          bugAttachments.splice(index, 1);
+          if (!bugAttachments.length) {
+            bugAttachmentInput.value = '';
+          }
+          renderBugAttachment();
+        });
+      }
+
+      function renderDesignAttachments() {
+        renderAttachmentPreview(designAttachments, designAttachmentPreview, (index) => {
+          designAttachments.splice(index, 1);
+          if (!designAttachments.length) {
+            designAttachmentInput.value = '';
+          }
+          renderDesignAttachments();
         });
       }
 
@@ -1409,10 +1435,14 @@
           payload.qaseCsvContext = qaseCsvContext;
         }
 
+        if (designAttachments.length) {
+          payload.designAttachments = designAttachments.map(serializeAttachmentForApi);
+        }
+
         return payload;
       }
 
-      function serializeBugAttachmentForApi(attachment) {
+      function serializeAttachmentForApi(attachment) {
         const {
           file,
           ...apiAttachment
@@ -1429,7 +1459,7 @@
         };
 
         if (bugAttachments.length) {
-          payload.attachments = bugAttachments.map(serializeBugAttachmentForApi);
+          payload.attachments = bugAttachments.map(serializeAttachmentForApi);
         }
 
         return payload;
@@ -1781,6 +1811,7 @@
         const historyPayload = { ...payload };
 
         delete historyPayload.attachments;
+        delete historyPayload.designAttachments;
 
         if (currentUser) {
           const data = await readJsonResponse(await apiFetch('/api/artifacts', {
@@ -2450,6 +2481,8 @@
       async function requestArtifact(button) {
         const payload = getButtonPayload(button);
         const isBugFlow = button.dataset.payloadSource === 'bug';
+        const isTestCasesFlow = button.dataset.resultKey === 'testCases';
+        const hasDesignAttachments = isTestCasesFlow && payload.designAttachments?.length > 0;
 
         clearError();
         setDownloadState();
@@ -2460,7 +2493,7 @@
           return;
         }
 
-        if (!isBugFlow && !payload.taskDescription) {
+        if (!isBugFlow && !hasDesignAttachments && !payload.taskDescription) {
           showError('Task Description is required.');
           renderResult('Add a task description, then choose an action.');
           return;
@@ -2480,7 +2513,7 @@
             label: button.textContent,
             text: resultText,
             qaseCsvContext: payload.qaseCsvContext || null,
-            evidenceFiles: isBugFlow ? bugAttachments : [],
+            evidenceFiles: isBugFlow ? bugAttachments : (isTestCasesFlow ? designAttachments : []),
             plainText: button.dataset.resultKey === 'gherkinTestCases',
             statusText: 'Ready',
           };
@@ -2808,19 +2841,42 @@
         try {
           const files = [...(bugAttachmentInput.files || [])];
 
-          if (files.length > MAX_BUG_ATTACHMENTS) {
-            throw new Error(`Upload ${MAX_BUG_ATTACHMENTS} bug evidence files or fewer.`);
+          if (files.length > MAX_ATTACHMENTS) {
+            throw new Error(`Upload ${MAX_ATTACHMENTS} bug evidence files or fewer.`);
           }
 
           bugAttachments = [];
           renderBugAttachment();
-          bugAttachments = (await Promise.all(files.map((file) => buildBugAttachment(file)))).filter(Boolean);
+          bugAttachments = (await Promise.all(files.map((file) => buildAttachment(file)))).filter(Boolean);
           renderBugAttachment();
           statusEl.textContent = bugAttachments.length ? 'Evidence attached' : 'Ready';
         } catch (err) {
           bugAttachments = [];
           bugAttachmentInput.value = '';
           renderBugAttachment();
+          showError(err.message || 'Unable to attach file.');
+        }
+      });
+
+      designAttachmentInput.addEventListener('change', async () => {
+        clearError();
+
+        try {
+          const files = [...(designAttachmentInput.files || [])];
+
+          if (files.length > MAX_ATTACHMENTS) {
+            throw new Error(`Upload ${MAX_ATTACHMENTS} design screenshots or fewer.`);
+          }
+
+          designAttachments = [];
+          renderDesignAttachments();
+          designAttachments = (await Promise.all(files.map((file) => buildAttachment(file)))).filter(Boolean);
+          renderDesignAttachments();
+          statusEl.textContent = designAttachments.length ? 'Design screenshot attached' : 'Ready';
+        } catch (err) {
+          designAttachments = [];
+          designAttachmentInput.value = '';
+          renderDesignAttachments();
           showError(err.message || 'Unable to attach file.');
         }
       });

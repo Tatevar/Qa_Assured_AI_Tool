@@ -51,7 +51,14 @@ function qaseCsvContextInput(qaseCsvContext) {
   return lines.length ? lines.join('\n') : 'None';
 }
 
-function baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext }) {
+function baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext, designAttachments }) {
+  const designAttachmentsSection = Array.isArray(designAttachments) && designAttachments.length
+    ? `
+
+Attached design screenshots:
+${attachmentInput(designAttachments)}`
+    : '';
+
   return `
 Task description:
 ${taskDescription.trim()}
@@ -63,7 +70,7 @@ Clarification answers:
 ${normalizeOptionalText(clarificationAnswers)}
 
 Uploaded Qase CSV context:
-${qaseCsvContextInput(qaseCsvContext)}
+${qaseCsvContextInput(qaseCsvContext)}${designAttachmentsSection}
 `.trim();
 }
 
@@ -211,11 +218,23 @@ export function generateTestCasesPrompt({
   additionalContext,
   clarificationAnswers,
   qaseCsvContext,
+  designAttachments,
 }) {
+  const hasDesignAttachments = Array.isArray(designAttachments) && designAttachments.length > 0;
+  const designScreenshotSection = hasDesignAttachments ? `
+
+Design screenshot coverage:
+- For each attached screenshot, first identify what screen or page it represents, its purpose in the product, and what a user can see and interact with on it (buttons, links, form fields, menus, navigation, state indicators, etc.).
+- Use that understanding of the screen to generate additional UI Check test cases grounded in what the screenshot actually shows: element presence and visibility, text/label accuracy, layout and alignment, and visible accessibility basics (e.g. missing alt text, low contrast, unclear focus order).
+- Ground every UI Check in the real purpose of the screen and the real interactions it supports, not a generic checklist.
+- Tag every screenshot-derived test case with "ui-check" in addition to any other relevant tags, so these cases can be grouped separately from the rest of the suite.
+- Do not fabricate elements, text, or behavior that is not visible or reasonably implied by the screenshot.
+- Always place a "## UI Checks" heading immediately before the first screenshot-derived test case, even if every generated test case is screenshot-derived. Put it after all other test cases so the UI Checks are grouped together at the end of the suite.` : '';
+
   return `
 You are a Senior QA Engineer and QA test architect writing detailed executable manual test cases for Qase.io.
 
-Generate a comprehensive, risk-based manual test suite from the story, context, clarification answers, and any uploaded Qase CSV context.
+Generate a comprehensive, risk-based manual test suite from the story, context, clarification answers, any uploaded Qase CSV context, and any attached design screenshots.
 
 Coverage sizing:
 - First analyze the full story, acceptance criteria, business rules, UI behavior, validations, permissions, integrations, data states, channels, and edge cases.
@@ -234,6 +253,17 @@ Coverage model:
 - UI and platform coverage for display rules, create vs edit behavior, default values, unsupported values, mobile/web/terminal/API differences, and different channels or entry points when relevant.
 - Data and business-rule coverage for existing data impact, cross-field dependencies, price/calculation logic, backend validation behavior, and integration side effects when relevant.
 
+Verification-only scope:
+- Treat every requirement as already implemented in the product. Test cases verify the behavior of the finished feature — they never describe building, adding, creating, inserting, or implementing a UI element, even if the source requirement is phrased that way (e.g. a ticket that says "Add a checkbox for X" means "verify the X checkbox," not "construct the X checkbox").
+- Never use construction verbs (Add, Create, Build, Implement, Insert, Introduce) to describe a UI element being made to exist. Reserve "Add"/"Enter"/"Select" only for a user action on an element that already exists (e.g. "Add an item to the cart," "Enter a valid email").
+- For every interactive element (checkbox, dropdown, toggle, radio button, multi-select), cover as separate cases where relevant:
+  - Default state on initial page load
+  - State immediately after user interaction (checked/unchecked, selected/deselected, expanded/collapsed)
+  - State persistence after navigation away and back, or after a page reload, when the feature implies persistence
+  - Mutually exclusive selection behavior for radio buttons and single-select dropdowns
+  - Enabled/disabled or shown/hidden conditional logic when the requirement implies one control depends on another
+- Never generate a test case that only asserts an element "exists," "is present," or "is displayed with correct layout/styling" with no behavior attached, unless the requirement text explicitly asks for a layout or rendering check. When the requirement does not ask for one, omit it entirely — do not add one on your own initiative. When the requirement does explicitly ask for one, tag it "ui-check" and place it under a "## UI Checks" heading at the end of the suite, separate from functional test cases.
+${designScreenshotSection}
 Each test case must include:
 - Test Case ID
 - Title
@@ -272,6 +302,7 @@ Rules:
 - Avoid duplicating existing case titles from the uploaded Qase CSV unless the new case materially expands coverage.
 - Put the whole test body inside Description as a "Steps" numbered list, then a blank line, then a single bold "**Expected result:** ..." line. Do not create separate Steps, Expected Result, or Postconditions fields outside of Description.
 - Keep steps clear enough for a QA engineer to execute manually.
+- Do not end any Step or the Expected result line with a period.
 - Do not include concrete test data or input values inside the steps. Describe the action to take (e.g. "Enter an existing zone ID") and let the QA engineer decide the actual values when executing the case.
 - Make the Expected result concrete: verify UI feedback, persisted data, permission state, and downstream side effects when relevant.
 - Only include the Preconditions line when the test case genuinely needs a precondition to be true before Step 1; omit the Preconditions line entirely otherwise. Never write "None" or "N/A".
@@ -279,10 +310,10 @@ Rules:
 - Do not invent unrelated product behavior.
 - Write each Title in sentence case: capitalize only the first word, plus any proper nouns, acronyms, or product-specific terms (e.g. API, URL, ID, PayGo). Do not capitalize every word.
 - Make the Title immediately understandable on its own: describe the concrete scenario in plain language (what is being done and under what condition), not a vague label.
-- Write titles the way a QA engineer would naturally describe the scenario, not from a rigid template. Do not start every title with the same word (e.g. "Verify", "Check", "Ensure", "Confirm") — vary the phrasing across the suite and lead with the subject, action, or condition being tested instead.
+- Write titles the way a QA engineer would naturally describe the scenario, not from a rigid template. Vary phrasing across the suite, but every title must describe verification of existing behavior (e.g. "Displays," "Rejects," "Persists," "Retains," "Validates," "Verify") — never construction of a UI element (never "Add," "Create," "Build," "Implement" applied to a UI element itself).
 - Use Markdown headings and numbered steps.
 
-${baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext })}
+${baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext, designAttachments })}
 `.trim();
 }
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { generateChatReply, generateQaArtifact } from '../aiClient.js';
 import { formatBugReport } from '../bugReportFormatter.js';
+import { formatTestCases } from '../testCaseFormatter.js';
 import {
   analyzeRisksPrompt,
   analyzeStoryPrompt,
@@ -13,13 +14,13 @@ import {
 } from '../prompts.js';
 
 const router = Router();
-const MAX_BUG_ATTACHMENTS = 6;
-const MAX_BUG_ATTACHMENT_BYTES = 50 * 1024 * 1024;
-const MAX_BUG_VISUAL_BYTES = 8 * 1024 * 1024;
+const MAX_ATTACHMENTS = 6;
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const MAX_VISUAL_BYTES = 8 * 1024 * 1024;
 const MAX_VIDEO_FRAME_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_TEXT_CHARS = 12000;
 const IMAGE_DATA_URL_PATTERN = /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i;
-const BUG_ATTACHMENT_KINDS = new Set(['image', 'text', 'video', 'file']);
+const ATTACHMENT_KINDS = new Set(['image', 'text', 'video', 'file']);
 const MAX_CHAT_MESSAGES = 20;
 const MAX_CHAT_MESSAGE_CHARS = 8000;
 
@@ -37,7 +38,7 @@ function getDataUrlByteLength(dataUrl) {
   return Math.floor((base64.length * 3) / 4) - padding;
 }
 
-function normalizeBugAttachments(attachments) {
+function normalizeAttachments(attachments) {
   if (!attachments) {
     return [];
   }
@@ -46,8 +47,8 @@ function normalizeBugAttachments(attachments) {
     throw createValidationError('Attachments must be an array.');
   }
 
-  if (attachments.length > MAX_BUG_ATTACHMENTS) {
-    throw createValidationError(`Upload ${MAX_BUG_ATTACHMENTS} bug evidence files or fewer.`);
+  if (attachments.length > MAX_ATTACHMENTS) {
+    throw createValidationError(`Upload ${MAX_ATTACHMENTS} files or fewer.`);
   }
 
   return attachments.map((attachment) => {
@@ -60,7 +61,7 @@ function normalizeBugAttachments(attachments) {
       : 'Attachment';
     const type = typeof attachment.type === 'string' ? attachment.type.trim().slice(0, 120) : '';
     const size = Number(attachment.size || 0);
-    const kind = BUG_ATTACHMENT_KINDS.has(attachment.kind) ? attachment.kind : 'file';
+    const kind = ATTACHMENT_KINDS.has(attachment.kind) ? attachment.kind : 'file';
     const normalizedAttachment = {
       name,
       type,
@@ -68,7 +69,7 @@ function normalizeBugAttachments(attachments) {
       kind,
     };
 
-    if (normalizedAttachment.size > MAX_BUG_ATTACHMENT_BYTES) {
+    if (normalizedAttachment.size > MAX_ATTACHMENT_BYTES) {
       throw createValidationError('Attachment must be 50 MB or smaller.');
     }
 
@@ -79,7 +80,7 @@ function normalizeBugAttachments(attachments) {
         throw createValidationError('Image attachment must be PNG, JPG, WEBP, or GIF.');
       }
 
-      if (getDataUrlByteLength(dataUrl) > MAX_BUG_VISUAL_BYTES) {
+      if (getDataUrlByteLength(dataUrl) > MAX_VISUAL_BYTES) {
         throw createValidationError('Image attachment data must be 8 MB or smaller.');
       }
 
@@ -96,7 +97,7 @@ function normalizeBugAttachments(attachments) {
           throw createValidationError('Recording frame must be a PNG, JPG, WEBP, or GIF image.');
         }
 
-        if (getDataUrlByteLength(dataUrl) > MAX_BUG_VISUAL_BYTES) {
+        if (getDataUrlByteLength(dataUrl) > MAX_VISUAL_BYTES) {
           throw createValidationError('Recording frame data must be 8 MB or smaller.');
         }
 
@@ -148,6 +149,32 @@ function validateTaskDescription(req, res, next) {
   return next();
 }
 
+function validateTestCasesRequest(req, res, next) {
+  const { taskDescription } = req.body || {};
+
+  try {
+    req.body.designAttachments = normalizeAttachments(req.body.designAttachments);
+  } catch (err) {
+    return next(err);
+  }
+
+  const hasTaskDescription = typeof taskDescription === 'string' && taskDescription.trim();
+  const hasDesignAttachments = req.body.designAttachments.length > 0;
+
+  if (!hasTaskDescription && !hasDesignAttachments) {
+    return res.status(400).json({
+      error: 'ValidationError',
+      message: 'Provide a task description, a design screenshot, or both.',
+    });
+  }
+
+  req.body.taskDescription = hasTaskDescription
+    ? taskDescription
+    : 'No written requirements provided. Generate test cases based solely on the attached design screenshot(s).';
+
+  return next();
+}
+
 function validateIssueDescription(req, res, next) {
   const { issueDescription } = req.body || {};
 
@@ -162,7 +189,7 @@ function validateIssueDescription(req, res, next) {
     req.body.clarificationAnswers = typeof req.body.clarificationAnswers === 'string'
       ? req.body.clarificationAnswers
       : typeof req.body.bugClarificationAnswers === 'string' ? req.body.bugClarificationAnswers : '';
-    req.body.attachments = normalizeBugAttachments(req.body.attachments);
+    req.body.attachments = normalizeAttachments(req.body.attachments);
   } catch (err) {
     return next(err);
   }
@@ -234,10 +261,14 @@ router.post(
 
 router.post(
   '/generate-test-cases',
-  validateTaskDescription,
+  validateTestCasesRequest,
   asyncHandler(async (req, res) => {
     const prompt = generateTestCasesPrompt(req.body);
-    const testCases = await generateQaArtifact(prompt);
+    const testCases = formatTestCases(
+      await generateQaArtifact(prompt, {
+        imageAttachments: getVisualAttachments(req.body.designAttachments),
+      }),
+    );
 
     res.json({
       testCases,
