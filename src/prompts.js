@@ -310,7 +310,12 @@ Rules:
 - Do not invent unrelated product behavior.
 - Write each Title in sentence case: capitalize only the first word, plus any proper nouns, acronyms, or product-specific terms (e.g. API, URL, ID, PayGo). Do not capitalize every word.
 - Make the Title immediately understandable on its own: describe the concrete scenario in plain language (what is being done and under what condition), not a vague label.
-- Write titles the way a QA engineer would naturally describe the scenario, not from a rigid template. Vary phrasing across the suite, but every title must describe verification of existing behavior (e.g. "Displays," "Rejects," "Persists," "Retains," "Validates," "Verify") — never construction of a UI element (never "Add," "Create," "Build," "Implement" applied to a UI element itself).
+- Write titles the way an experienced QA engineer would type them into a test management tool, not from a rigid template. Vary phrasing across the suite so titles do not all follow the same structure.
+- Never use third-person singular verbs to open a title, including "Validates," "Verifies," "Checks," "Ensures," "Handles," "Sends," or "Does" — these read as auto-generated. Prefer product-behavior phrasing that states what the system or data does or does not do (e.g. "Payment failure email is not sent when user email is invalid," "Paid ticket is not added to the payment retry queue"). "Validate," "Verify," and "Check" are only allowed as imperative instructions to the tester (e.g. "Validate Swedish payment failure email content"), and only when product-behavior phrasing would sound worse.
+- Never phrase a title as the system acting like a person (never "System sends...", "System validates...").
+- Never construct a title around a UI element being made to exist (never "Add," "Create," "Build," "Implement" applied to a UI element itself).
+- Each title must cover exactly one clear scenario, and no two titles in the suite may duplicate or overlap the same scenario.
+- Avoid vague filler words like "properly," "correctly," or "successfully" unless the word is genuinely necessary to distinguish the scenario.
 - Use Markdown headings and numbered steps.
 
 ${baseInput({ taskDescription, additionalContext, clarificationAnswers, qaseCsvContext, designAttachments })}
