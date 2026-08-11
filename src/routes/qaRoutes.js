@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { generateChatReply, generateQaArtifact } from '../aiClient.js';
+import { normalizeBugContext } from '../bugReportContext.js';
 import { formatBugReport } from '../bugReportFormatter.js';
 import { formatTestCases } from '../testCaseFormatter.js';
 import {
@@ -190,6 +191,7 @@ function validateIssueDescription(req, res, next) {
       ? req.body.clarificationAnswers
       : typeof req.body.bugClarificationAnswers === 'string' ? req.body.bugClarificationAnswers : '';
     req.body.attachments = normalizeAttachments(req.body.attachments);
+    req.body.bugContext = normalizeBugContext(req.body);
   } catch (err) {
     return next(err);
   }

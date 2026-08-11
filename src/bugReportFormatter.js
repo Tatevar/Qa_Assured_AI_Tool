@@ -6,16 +6,23 @@ const REMOVED_SECTION_LABELS = new Set([
 
 const RESULT_SECTION_LABELS = new Set(['Actual Result', 'Expected Result']);
 const SECTION_LABELS = [
+  'Affected Surface',
   'Severity / Priority',
+  'Preconditions / Test Data',
   'Steps to Reproduce',
   'Clarification Questions',
   'Additional Info',
   'Actual Result',
   'Expected Result',
+  'Endpoint / Route',
+  'Request Details',
+  'Response Details',
   'Affected Area',
   'Reproducibility',
   'Environment',
   'Evidence',
+  'Preconditions',
+  'Test Data',
   'Priority',
   'Severity',
   'Title',

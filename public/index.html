@@ -123,9 +123,18 @@
       .auth-row input {
         min-height: 42px;
         min-width: 220px;
+        width: min(280px, 100%);
+      }
+
+      input,
+      select {
+        min-height: 44px;
+        width: 100%;
         border: 1px solid var(--border);
         border-radius: 8px;
         padding: 0 12px;
+        color: var(--text);
+        background: #ffffff;
         font: inherit;
       }
 
@@ -160,14 +169,47 @@
         background: #ffffff;
       }
 
+      select {
+        appearance: none;
+        background-image:
+          linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+          linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+        background-position:
+          calc(100% - 18px) 19px,
+          calc(100% - 13px) 19px;
+        background-size: 5px 5px, 5px 5px;
+        background-repeat: no-repeat;
+        padding-right: 36px;
+      }
+
       textarea:focus,
-      input:focus {
+      input:focus,
+      select:focus {
         border-color: var(--accent);
         outline: 3px solid rgba(15, 118, 110, 0.16);
       }
 
       #taskDescription {
         min-height: 280px;
+      }
+
+      .bug-field-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .bug-field-grid .field {
+        margin-bottom: 0;
+      }
+
+      .bug-field-grid + .field,
+      .field + .bug-field-grid {
+        margin-top: 18px;
+      }
+
+      .compact-textarea {
+        min-height: 92px;
       }
 
       .chat-intro {
@@ -643,6 +685,10 @@
         .history-item {
           grid-template-columns: minmax(0, 1fr);
         }
+
+        .bug-field-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
       }
     </style>
   </head>
@@ -732,13 +778,65 @@
         <section id="bugPanel" class="panel tab-panel" role="tabpanel" aria-labelledby="bugTab" hidden>
           <form id="bugForm">
             <div class="field">
-              <label for="issueDescription">Issue Description</label>
-              <textarea id="issueDescription" name="issueDescription" required placeholder="Describe the issue, environment, steps, actual result, expected result, payment method, device, browser, account type, or any evidence you have."></textarea>
+              <label for="issueDescription">Bug Summary</label>
+              <textarea id="issueDescription" name="issueDescription" required placeholder="Summarize the defect, including the main symptom and expected behavior when you already know it."></textarea>
+            </div>
+
+            <div class="bug-field-grid">
+              <div class="field">
+                <label for="bugSurface">Affected Surface</label>
+                <select id="bugSurface" name="bugSurface">
+                  <option value="auto">Auto-detect</option>
+                  <option value="api">API</option>
+                  <option value="frontend">Frontend/UI</option>
+                  <option value="backend">Backend/service</option>
+                  <option value="mobile">Mobile app</option>
+                  <option value="data">Data/database</option>
+                  <option value="integration">Integration</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="bugEnvironment">Environment</label>
+                <input id="bugEnvironment" name="bugEnvironment" type="text" placeholder="Staging, build/version, browser/device, role, tenant" />
+              </div>
+
+              <div class="field">
+                <label for="bugEndpoint">Endpoint / Route</label>
+                <input id="bugEndpoint" name="bugEndpoint" type="text" placeholder="POST /api/discounts/apply" />
+              </div>
+
+              <div class="field">
+                <label for="bugSeverityPriority">Severity / Priority</label>
+                <input id="bugSeverityPriority" name="bugSeverityPriority" type="text" placeholder="Major / High" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="bugSteps">Steps / Request Details</label>
+              <textarea id="bugSteps" class="compact-textarea" name="bugSteps" placeholder="Request method, endpoint, payload, response, or user steps that reproduce the defect."></textarea>
+            </div>
+
+            <div class="bug-field-grid">
+              <div class="field">
+                <label for="bugActualResult">Actual Result</label>
+                <textarea id="bugActualResult" class="compact-textarea" name="bugActualResult" placeholder="Observed response, UI behavior, database state, log message, or side effect."></textarea>
+              </div>
+
+              <div class="field">
+                <label for="bugExpectedResult">Expected Result</label>
+                <textarea id="bugExpectedResult" class="compact-textarea" name="bugExpectedResult" placeholder="Expected validation, response, UI state, data state, or business-rule outcome."></textarea>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="bugTestData">Test Data / Preconditions</label>
+              <textarea id="bugTestData" class="compact-textarea" name="bugTestData" placeholder="Ticket status, user role, account, discount code, feature flag, record state, or setup notes."></textarea>
             </div>
 
             <div class="field">
               <label for="bugClarificationAnswers">Additional Info</label>
-              <textarea id="bugClarificationAnswers" name="bugClarificationAnswers" placeholder="Add logs, environment details, test data, user role, browser/device info, API responses, investigation notes, or attachment context."></textarea>
+              <textarea id="bugClarificationAnswers" name="bugClarificationAnswers" placeholder="Logs, investigation notes, attachment context, related tickets, or extra constraints."></textarea>
             </div>
 
             <div class="field">
@@ -1403,6 +1501,14 @@
           clarificationAnswers: qaForm.clarificationAnswers.value.trim(),
           qaseCsvContext,
           issueDescription: bugForm.issueDescription.value.trim(),
+          bugSurface: bugForm.bugSurface.value,
+          bugEnvironment: bugForm.bugEnvironment.value.trim(),
+          bugEndpoint: bugForm.bugEndpoint.value.trim(),
+          bugSteps: bugForm.bugSteps.value.trim(),
+          bugActualResult: bugForm.bugActualResult.value.trim(),
+          bugExpectedResult: bugForm.bugExpectedResult.value.trim(),
+          bugTestData: bugForm.bugTestData.value.trim(),
+          bugSeverityPriority: bugForm.bugSeverityPriority.value.trim(),
           bugClarificationAnswers: bugForm.bugClarificationAnswers.value.trim(),
           activeTab,
         };
@@ -1417,6 +1523,14 @@
           : null;
         renderQaseCsvContext();
         bugForm.issueDescription.value = payload.issueDescription || '';
+        bugForm.bugSurface.value = payload.bugSurface || 'auto';
+        bugForm.bugEnvironment.value = payload.bugEnvironment || '';
+        bugForm.bugEndpoint.value = payload.bugEndpoint || '';
+        bugForm.bugSteps.value = payload.bugSteps || '';
+        bugForm.bugActualResult.value = payload.bugActualResult || '';
+        bugForm.bugExpectedResult.value = payload.bugExpectedResult || '';
+        bugForm.bugTestData.value = payload.bugTestData || '';
+        bugForm.bugSeverityPriority.value = payload.bugSeverityPriority || '';
         bugForm.bugClarificationAnswers.value = payload.bugClarificationAnswers || '';
 
         if (payload.activeTab === 'bug' || payload.activeTab === 'chat') {
@@ -1454,6 +1568,14 @@
       function getBugPayload() {
         const payload = {
           issueDescription: bugForm.issueDescription.value.trim(),
+          bugSurface: bugForm.bugSurface.value,
+          bugEnvironment: bugForm.bugEnvironment.value.trim(),
+          bugEndpoint: bugForm.bugEndpoint.value.trim(),
+          bugSteps: bugForm.bugSteps.value.trim(),
+          bugActualResult: bugForm.bugActualResult.value.trim(),
+          bugExpectedResult: bugForm.bugExpectedResult.value.trim(),
+          bugTestData: bugForm.bugTestData.value.trim(),
+          bugSeverityPriority: bugForm.bugSeverityPriority.value.trim(),
           clarificationAnswers: bugForm.bugClarificationAnswers.value.trim(),
           bugClarificationAnswers: bugForm.bugClarificationAnswers.value.trim(),
         };
@@ -1792,6 +1914,13 @@
           qaForm.additionalContext.value ||
           qaForm.clarificationAnswers.value ||
           bugForm.issueDescription.value ||
+          bugForm.bugEnvironment.value ||
+          bugForm.bugEndpoint.value ||
+          bugForm.bugSteps.value ||
+          bugForm.bugActualResult.value ||
+          bugForm.bugExpectedResult.value ||
+          bugForm.bugTestData.value ||
+          bugForm.bugSeverityPriority.value ||
           bugForm.bugClarificationAnswers.value
         ) {
           await apiFetch('/api/artifacts/draft/current', {
@@ -2814,6 +2943,14 @@
         qaForm.additionalContext,
         qaForm.clarificationAnswers,
         bugForm.issueDescription,
+        bugForm.bugSurface,
+        bugForm.bugEnvironment,
+        bugForm.bugEndpoint,
+        bugForm.bugSteps,
+        bugForm.bugActualResult,
+        bugForm.bugExpectedResult,
+        bugForm.bugTestData,
+        bugForm.bugSeverityPriority,
         bugForm.bugClarificationAnswers,
       ].forEach((field) => {
         field.addEventListener('input', saveDraft);

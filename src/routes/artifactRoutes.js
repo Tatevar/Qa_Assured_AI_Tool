@@ -30,6 +30,14 @@ router.post('/', (req, res) => {
     qaseCsvContext,
     issueDescription,
     bugClarificationAnswers,
+    bugSurface,
+    bugEnvironment,
+    bugEndpoint,
+    bugSteps,
+    bugActualResult,
+    bugExpectedResult,
+    bugTestData,
+    bugSeverityPriority,
   } = req.body || {};
 
   if (typeof key !== 'string' || typeof text !== 'string' || !text.trim()) {
@@ -53,6 +61,14 @@ router.post('/', (req, res) => {
     qaseCsvContext: qaseCsvContext && typeof qaseCsvContext === 'object' ? qaseCsvContext : null,
     issueDescription: typeof issueDescription === 'string' ? issueDescription : '',
     bugClarificationAnswers: typeof bugClarificationAnswers === 'string' ? bugClarificationAnswers : '',
+    bugSurface: typeof bugSurface === 'string' ? bugSurface : 'auto',
+    bugEnvironment: typeof bugEnvironment === 'string' ? bugEnvironment : '',
+    bugEndpoint: typeof bugEndpoint === 'string' ? bugEndpoint : '',
+    bugSteps: typeof bugSteps === 'string' ? bugSteps : '',
+    bugActualResult: typeof bugActualResult === 'string' ? bugActualResult : '',
+    bugExpectedResult: typeof bugExpectedResult === 'string' ? bugExpectedResult : '',
+    bugTestData: typeof bugTestData === 'string' ? bugTestData : '',
+    bugSeverityPriority: typeof bugSeverityPriority === 'string' ? bugSeverityPriority : '',
     createdAt: new Date().toISOString(),
   };
 
@@ -103,6 +119,14 @@ router.put('/draft/current', (req, res) => {
     qaseCsvContext: req.body?.qaseCsvContext && typeof req.body.qaseCsvContext === 'object' ? req.body.qaseCsvContext : null,
     issueDescription: typeof req.body?.issueDescription === 'string' ? req.body.issueDescription : '',
     bugClarificationAnswers: typeof req.body?.bugClarificationAnswers === 'string' ? req.body.bugClarificationAnswers : '',
+    bugSurface: typeof req.body?.bugSurface === 'string' ? req.body.bugSurface : 'auto',
+    bugEnvironment: typeof req.body?.bugEnvironment === 'string' ? req.body.bugEnvironment : '',
+    bugEndpoint: typeof req.body?.bugEndpoint === 'string' ? req.body.bugEndpoint : '',
+    bugSteps: typeof req.body?.bugSteps === 'string' ? req.body.bugSteps : '',
+    bugActualResult: typeof req.body?.bugActualResult === 'string' ? req.body.bugActualResult : '',
+    bugExpectedResult: typeof req.body?.bugExpectedResult === 'string' ? req.body.bugExpectedResult : '',
+    bugTestData: typeof req.body?.bugTestData === 'string' ? req.body.bugTestData : '',
+    bugSeverityPriority: typeof req.body?.bugSeverityPriority === 'string' ? req.body.bugSeverityPriority : '',
     activeTab: req.body?.activeTab === 'bug' ? 'bug' : 'requirements',
   };
   const existingDraft = db.drafts.find((item) => item.userId === req.user.id);

@@ -117,10 +117,42 @@ function attachmentInput(attachments = []) {
   }).join('\n');
 }
 
-function bugInput({ issueDescription, clarificationAnswers, attachments }) {
+function bugContextInput(bugContext) {
+  if (!bugContext || typeof bugContext !== 'object') {
+    return 'None';
+  }
+
+  const lines = [
+    `Selected affected surface: ${bugContext.selectedSurfaceLabel || 'Auto-detect'}`,
+    `Auto-detected surface: ${bugContext.detectedSurfaceLabel || 'Unknown'}`,
+    `Effective affected surface: ${bugContext.effectiveSurfaceLabel || 'Unknown'}`,
+  ];
+  const fields = [
+    ['Environment', bugContext.environment],
+    ['Endpoint / route', bugContext.endpoint],
+    ['Steps / request details', bugContext.steps],
+    ['Actual result', bugContext.actualResult],
+    ['Expected result', bugContext.expectedResult],
+    ['Test data / preconditions', bugContext.testData],
+    ['Severity / priority', bugContext.severityPriority],
+  ];
+
+  fields.forEach(([label, value]) => {
+    if (typeof value === 'string' && value.trim()) {
+      lines.push(`${label}: ${value.trim()}`);
+    }
+  });
+
+  return lines.join('\n');
+}
+
+function bugInput({ issueDescription, clarificationAnswers, attachments, bugContext }) {
   return `
 Issue description:
 ${issueDescription.trim()}
+
+Structured bug context:
+${bugContextInput(bugContext)}
 
 Additional info:
 ${normalizeOptionalText(clarificationAnswers)}
@@ -415,24 +447,30 @@ For general questions about the requirements or QA process, answer directly and 
 `.trim();
 }
 
-export function generateBugReportPrompt({ issueDescription, clarificationAnswers, attachments }) {
+export function generateBugReportPrompt({ issueDescription, clarificationAnswers, attachments, bugContext }) {
   return `
 You are a Senior QA Engineer writing a clear, developer-ready bug report.
 
-Create a bug report from the issue description, Additional info, and uploaded evidence.
+Create a bug report from the issue description, structured bug context, Additional info, and uploaded evidence.
 
 The report must use this structure:
 # Bug Report
 
 **Title:** Concise sentence-case symptom
 
+**Affected Surface:**
+[API, Frontend/UI, Backend/service, Mobile app, Data/database, Integration, or Not provided]
+
 **Environment:**
 - [environment detail or Not provided]
 
+**Preconditions / Test Data:**
+[ticket/user/account/data state, request data, feature flag, permission, or omit this section when not relevant and not provided]
+
 **Steps to Reproduce:**
-1. Go to [website/application]
-2. Open [specific page or feature]
-3. Perform [specific action that triggers the issue]
+1. [surface-appropriate first action]
+2. [surface-appropriate trigger]
+3. [surface-appropriate verification]
 
 **Actual Result:**
 [observed behavior as plain text, not a bullet list]
@@ -451,6 +489,9 @@ The report must use this structure:
 
 Rules:
 - Keep the report specific to the provided issue.
+- Use the Effective affected surface from Structured bug context as the source of truth for report scope. If it is "Unknown", infer the surface from the issue text without inventing product behavior.
+- If the Selected affected surface is anything other than Auto-detect, respect it unless the issue text explicitly proves a different surface.
+- Always prefer structured fields over ambiguous wording in the issue description when they conflict.
 - Title must be sentence case: only the first word starts with an uppercase letter unless a product name, acronym, proper noun, or required technical term needs its capitalization preserved.
 - Preserve important acronyms and product/technical names such as API, SMS, ID, URL, ANPR, PayGo, MP4, UI, QA, Qase, iOS, and Android.
 - Preserve important product names, payment methods, platforms, and observed behavior.
@@ -458,15 +499,22 @@ Rules:
 - Infer reasonable bug-report wording from the description, but do not invent missing facts.
 - Always analyze Additional info and use it in the correct section when relevant: title, environment, preconditions, steps, actual result, expected result, evidence, notes, investigation details, attachments, severity, or priority.
 - Base the Expected Result on the control label, feature intent, or explicitly provided expectation; never turn the observed failure into expected behavior.
+- If the issue description contains both actual and expected behavior in one sentence, split them into Actual Result and Expected Result instead of treating the whole sentence as the symptom.
 - Treat "Copy", "Kopiera", and similar copy-button labels as copy-to-clipboard actions unless the issue explicitly says compose-email behavior is expected.
 - If a copy button opens an email compose window, describe that compose window as unexpected actual behavior and say the expected result is that the value is copied without opening compose.
 - Use "Not provided" for unknown environment, data, account, browser, device, version, or evidence.
 - Make steps concise, numbered, and directly executable.
-- Start reproduction steps from the user entry point, such as going to the website or opening the application.
-- Separate navigation from the triggering action: first open the specific page, then perform the action that causes the issue.
+- Start reproduction steps from the correct entry point for the affected surface.
+- For API defects, steps must use API-client, request, endpoint, payload, ticket/status data, response, persistence, or backend validation language. Do not write browser, website, page, screen, button, click, or frontend navigation steps unless the user explicitly says the UI is the trigger.
+- For API defects with no endpoint provided, write a generic but accurate API step such as "Send the API request that applies a discount code to the affected ticket" instead of inventing a URL, endpoint, web page, or UI flow.
+- For API defects, the Expected Result should describe API rejection, response status/body, validation error, data not being persisted, downstream side effect prevention, or business-rule enforcement when relevant.
+- For Frontend/UI defects, separate navigation from the triggering action: first open the specific page, then perform the action that causes the issue.
+- For Backend/service defects, use the event, job, queue message, service call, or server-side condition that triggers the issue; do not force UI steps.
+- For Data/database or Integration defects, include the data state, sync/import/export/provider action, and downstream verification that proves the issue.
 - When one report contains multiple related trigger actions, include each trigger action in the reproduction steps.
 - Do not use a single generic step like "Open the Parking Tickets section in the application" when the issue needs website entry, page navigation, and a user action.
 - If the exact URL is not provided, write "Go to the website" or "Open the application" instead of inventing a URL.
+- Never write "Go to the website" or "Open the application" for an API/backend/data/integration defect unless the UI is explicitly part of the reproduction.
 - Use bold section labels exactly as shown.
 - Do not include Affected Area, Reproducibility, or Clarification Questions sections.
 - Do not use bullet points or numbered lists in Actual Result or Expected Result.
@@ -477,6 +525,6 @@ Rules:
 - If a recording cannot be fully analyzed, still reference the recording filename in Evidence.
 - Omit the Evidence section when no file is uploaded.
 
-${bugInput({ issueDescription, clarificationAnswers, attachments })}
+${bugInput({ issueDescription, clarificationAnswers, attachments, bugContext })}
 `.trim();
 }
